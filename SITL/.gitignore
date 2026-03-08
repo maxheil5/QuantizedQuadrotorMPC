@@ -1,0 +1,14 @@
+.venv/
+build/
+install/
+log/
+logs/*
+!logs/.gitkeep
+results/*
+!results/.gitkeep
+artifacts/*
+!artifacts/.gitkeep
+src/px4_msgs/
+__pycache__/
+*.pyc
+.pytest_cache/

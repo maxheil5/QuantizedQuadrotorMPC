@@ -1,0 +1,11 @@
+profile_name: paper_v2
+random_seed: 2141444
+dt: 0.001
+train_traj_duration: 0.1
+training_n_control: 100
+n_basis: 3
+word_lengths: [4, 8, 12, 14, 16]
+include_unquantized: false
+run_count: 50
+tracking_enabled: true
+

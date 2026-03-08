@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+import csv
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Iterable
+
+import numpy as np
+
+
+def ensure_dir(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def create_run_directory(root: Path, profile_name: str, tag: str | None = None) -> Path:
+    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    suffix = f"_{tag}" if tag else ""
+    run_dir = ensure_dir(root / profile_name / f"{timestamp}{suffix}")
+    latest = root / profile_name / "latest"
+    if latest.is_symlink() or latest.exists():
+        latest.unlink()
+    latest.symlink_to(run_dir.name)
+    return run_dir
+
+
+def write_json(path: Path, payload: dict) -> None:
+    with path.open("w", encoding="utf-8") as stream:
+        json.dump(payload, stream, indent=2, sort_keys=True)
+
+
+def write_csv(path: Path, rows: Iterable[dict[str, object]]) -> None:
+    rows = list(rows)
+    if not rows:
+        return
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def save_npz(path: Path, **arrays: np.ndarray) -> None:
+    np.savez(path, **arrays)
+
