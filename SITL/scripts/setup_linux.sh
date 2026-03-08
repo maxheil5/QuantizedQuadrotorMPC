@@ -82,6 +82,13 @@ if [[ ! -d "${ROOT_DIR}/artifacts/external/PX4-Autopilot/.git" ]]; then
 fi
 git -C "${ROOT_DIR}/artifacts/external/PX4-Autopilot" fetch --tags
 git -C "${ROOT_DIR}/artifacts/external/PX4-Autopilot" checkout v1.16.0
+git -C "${ROOT_DIR}/artifacts/external/PX4-Autopilot" submodule update --init --recursive
+
+if [[ ! -d "${ROOT_DIR}/artifacts/external/PX4-gazebo-models/.git" ]]; then
+  git clone https://github.com/PX4/PX4-gazebo-models.git "${ROOT_DIR}/artifacts/external/PX4-gazebo-models"
+fi
+git -C "${ROOT_DIR}/artifacts/external/PX4-gazebo-models" fetch
+git -C "${ROOT_DIR}/artifacts/external/PX4-gazebo-models" checkout main
 
 if [[ ! -d "${ROOT_DIR}/src/px4_msgs/.git" ]]; then
   git clone https://github.com/PX4/px4_msgs.git "${ROOT_DIR}/src/px4_msgs"
@@ -97,10 +104,10 @@ cmake --build "${ROOT_DIR}/artifacts/external/Micro-XRCE-DDS-Agent/build" -j"$(n
 
 bash "${ROOT_DIR}/artifacts/external/PX4-Autopilot/Tools/setup/ubuntu.sh" --no-sim-tools --no-nuttx
 python -m pip install -e "${ROOT_DIR}/src/quantized_quadrotor_sitl"
+bash "${ROOT_DIR}/scripts/install_px4_gazebo_overlay.sh"
 
 source /opt/ros/humble/setup.bash
 rosdep install --from-paths "${ROOT_DIR}/src" --ignore-src -r -y
 colcon build --symlink-install --base-paths "${ROOT_DIR}/src"
 
 echo "Setup complete."
-

@@ -27,6 +27,13 @@
 - The controller computes force/moment commands in the MATLAB-facing body frame.
 - The runtime mapper converts those commands back into PX4 body-frame normalized thrust/torque setpoints.
 
+## Vehicle Model Overlay
+
+- The runtime no longer launches the stock `gz_x500` target directly.
+- `scripts/install_px4_gazebo_overlay.sh` generates `quantized_koopman_quad` by copying the PX4 x500 Gazebo model and patching the base-link mass and inertia with the MATLAB values from `get_params.m`.
+- `scripts/run_sitl_experiment.sh` starts Gazebo in standalone mode and then starts PX4 with `PX4_SIM_MODEL=gz_quantized_koopman_quad`.
+- This keeps the ROS/PX4/Gazebo wiring intact while removing the direct dependency on the unmodified stock vehicle model.
+
 ## Artifact Flow
 
 - Offline runner outputs `edmd_unquantized.npz` and `edmd_bits_XX_run_YY.npz`.
@@ -34,4 +41,3 @@
   - `A`, `B`, `C`, `Z1`, `Z2`, `n_basis`
   - training-data min/max ranges for state and control quantizers
 - The SITL controller loads one artifact and uses the saved ranges for runtime quantization.
-

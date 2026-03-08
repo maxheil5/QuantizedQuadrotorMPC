@@ -5,6 +5,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_PATH="${1:-${ROOT_DIR}/configs/sitl_runtime.yaml}"
 PX4_DIR="${PX4_DIR:-${ROOT_DIR}/artifacts/external/PX4-Autopilot}"
 AGENT_DIR="${AGENT_DIR:-${ROOT_DIR}/artifacts/external/Micro-XRCE-DDS-Agent}"
+OVERLAY_CONFIG="${OVERLAY_CONFIG:-${ROOT_DIR}/configs/gazebo/quantized_koopman_quad.yaml}"
+WORLD_FILE="${PX4_GZ_WORLD_FILE:-${ROOT_DIR}/configs/gazebo/worlds/quantized_koopman_empty.sdf}"
+WORLD_NAME="${PX4_GZ_WORLD:-quantized_koopman_empty}"
+SIM_MODEL_NAME="${PX4_SIM_MODEL:-gz_quantized_koopman_quad}"
+HEADLESS="${HEADLESS:-0}"
+GZ_MODELS_DIR="${ROOT_DIR}/artifacts/generated/gazebo_models"
+GZ_WORLDS_DIR="${ROOT_DIR}/configs/gazebo/worlds"
 
 if [[ -d "${ROOT_DIR}/.venv" ]]; then
   source "${ROOT_DIR}/.venv/bin/activate"
@@ -25,19 +32,48 @@ if [[ ! -d "${PX4_DIR}" ]]; then
   exit 1
 fi
 
+if [[ ! -f "${WORLD_FILE}" ]]; then
+  echo "Gazebo world file is missing: ${WORLD_FILE}" >&2
+  exit 1
+fi
+
+bash "${ROOT_DIR}/scripts/install_px4_gazebo_overlay.sh" "${OVERLAY_CONFIG}" >/dev/null
+export GZ_SIM_RESOURCE_PATH="${GZ_MODELS_DIR}:${GZ_WORLDS_DIR}${GZ_SIM_RESOURCE_PATH:+:${GZ_SIM_RESOURCE_PATH}}"
+
 "${AGENT_DIR}/build/MicroXRCEAgent" udp4 -p 8888 &
 AGENT_PID=$!
 
 cleanup() {
   kill "${AGENT_PID}" >/dev/null 2>&1 || true
+  kill "${GZ_PID:-0}" >/dev/null 2>&1 || true
   kill "${PX4_PID:-0}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
+if [[ ! -x "${PX4_DIR}/build/px4_sitl_default/bin/px4" ]]; then
+  pushd "${PX4_DIR}" >/dev/null
+  make px4_sitl
+  popd >/dev/null
+fi
+
+GZ_ARGS=(-r "${WORLD_FILE}")
+if [[ "${HEADLESS}" == "1" ]]; then
+  GZ_ARGS=(-s -r "${WORLD_FILE}")
+fi
+
+gz sim "${GZ_ARGS[@]}" &
+GZ_PID=$!
+
+sleep 3
+
 pushd "${PX4_DIR}" >/dev/null
-PX4_GZ_WORLD="${PX4_GZ_WORLD:-empty}" make px4_sitl gz_x500 &
+env \
+  PX4_GZ_STANDALONE=1 \
+  PX4_SYS_AUTOSTART="${PX4_SYS_AUTOSTART:-4001}" \
+  PX4_GZ_WORLD="${WORLD_NAME}" \
+  PX4_SIM_MODEL="${SIM_MODEL_NAME}" \
+  ./build/px4_sitl_default/bin/px4 &
 PX4_PID=$!
 popd >/dev/null
 
 ros2 launch quantized_quadrotor_sitl quantized_quadrotor_sitl.launch.py config:="${CONFIG_PATH}"
-
