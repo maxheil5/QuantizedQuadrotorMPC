@@ -40,6 +40,9 @@ if source_dir is None:
         + ", ".join(str(path) for path in candidate_dirs)
     )
 output_dir.mkdir(parents=True, exist_ok=True)
-installed = install_overlay(source_dir, output_dir, config)
-print(installed)
+local_cache_dir.mkdir(parents=True, exist_ok=True)
+generated_install = install_overlay(source_dir, output_dir, config)
+cache_install = install_overlay(source_dir, local_cache_dir, config)
+print(generated_install)
+print(cache_install)
 PY

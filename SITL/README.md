@@ -43,7 +43,7 @@ Ubuntu 22.04 + ROS 2 Humble + Gazebo Harmonic + PX4 setup is documented in [docs
 | 2 | `SITL/` | `source /opt/ros/humble/setup.bash` | Loads ROS 2 Humble into the shell. |
 | 3 | `SITL/` | `source .venv/bin/activate` | Loads the Python dependencies used by the parity and runtime code. |
 | 4 | `SITL/` | `source install/setup.bash` | Loads the built ROS 2 workspace so the launch file and nodes resolve. |
-| 5 | `SITL/` | `./scripts/run_sitl_experiment.sh configs/sitl_runtime.yaml` | Generates the `quantized_koopman_quad` overlay model, exports `GZ_SIM_RESOURCE_PATH`, starts Micro XRCE-DDS Agent, starts Gazebo Harmonic on the custom world, starts PX4 in standalone mode, and launches the ROS 2 telemetry/controller nodes. |
+| 5 | `SITL/` | `./scripts/run_sitl_experiment.sh configs/sitl_runtime.yaml` | Generates the `quantized_koopman_quad` overlay model, mirrors the model and custom world into `~/.simulation-gazebo/`, starts Micro XRCE-DDS Agent, starts PX4's supported `simulation-gazebo` standalone world launcher, starts PX4 in standalone mode, and launches the ROS 2 telemetry/controller nodes. |
 | 6 | `SITL/` | `tail -f results/sitl/latest/runtime_log.csv` | Watches controller outputs, quantized states, and control commands during the run. |
 | 7 | `SITL/` | `ls results/sitl/latest` | Checks the generated runtime logs and artifacts after the experiment exits. |
 
@@ -92,6 +92,7 @@ This launches:
 1. Micro XRCE-DDS Agent
 2. Gazebo Harmonic on `configs/gazebo/worlds/quantized_koopman_empty.sdf`
 3. PX4 SITL in standalone Gazebo mode with `PX4_SIM_MODEL=gz_quantized_koopman_quad`
+4. PX4's `simulation-gazebo` launcher serves the custom world from `~/.simulation-gazebo/worlds/quantized_koopman_empty.sdf`
 4. ROS 2 telemetry adapter
 5. ROS 2 quantized Koopman/EDMD + MPC controller node
 

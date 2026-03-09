@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import rclpy
 from px4_msgs.msg import OffboardControlMode, VehicleCommand, VehicleThrustSetpoint, VehicleTorqueSetpoint
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float64MultiArray
@@ -221,9 +222,12 @@ def main() -> None:
     node = ControllerNode()
     try:
         rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

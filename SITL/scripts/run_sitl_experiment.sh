@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_PATH="${1:-${ROOT_DIR}/configs/sitl_runtime.yaml}"
 PX4_DIR="${PX4_DIR:-${ROOT_DIR}/artifacts/external/PX4-Autopilot}"
 AGENT_DIR="${AGENT_DIR:-${ROOT_DIR}/artifacts/external/Micro-XRCE-DDS-Agent}"
+PX4_GAZEBO_MODELS_DIR="${ROOT_DIR}/artifacts/external/PX4-gazebo-models"
 OVERLAY_CONFIG="${OVERLAY_CONFIG:-${ROOT_DIR}/configs/gazebo/quantized_koopman_quad.yaml}"
 WORLD_FILE="${PX4_GZ_WORLD_FILE:-${ROOT_DIR}/configs/gazebo/worlds/quantized_koopman_empty.sdf}"
 WORLD_NAME="${PX4_GZ_WORLD:-quantized_koopman_empty}"
@@ -14,7 +15,10 @@ GZ_MODELS_DIR="${ROOT_DIR}/artifacts/generated/gazebo_models"
 GZ_WORLDS_DIR="${ROOT_DIR}/configs/gazebo/worlds"
 PX4_BUNDLED_MODELS_DIR="${PX4_DIR}/Tools/simulation/gz/models"
 PX4_EXTERNAL_MODELS_DIR="${ROOT_DIR}/artifacts/external/PX4-gazebo-models/models"
+LOCAL_CACHE_MODELS_DIR="${HOME}/.simulation-gazebo/models"
+LOCAL_CACHE_WORLDS_DIR="${HOME}/.simulation-gazebo/worlds"
 PACKAGE_ROOT="${ROOT_DIR}/src/quantized_quadrotor_sitl"
+SIMULATION_GAZEBO_SCRIPT="${PX4_GAZEBO_MODELS_DIR}/simulation-gazebo"
 
 if [[ -d "${ROOT_DIR}/.venv" ]]; then
   source "${ROOT_DIR}/.venv/bin/activate"
@@ -42,8 +46,15 @@ if [[ ! -f "${WORLD_FILE}" ]]; then
   exit 1
 fi
 
+if [[ ! -f "${SIMULATION_GAZEBO_SCRIPT}" ]]; then
+  echo "PX4 Gazebo launcher is missing: ${SIMULATION_GAZEBO_SCRIPT}" >&2
+  exit 1
+fi
+
 bash "${ROOT_DIR}/scripts/install_px4_gazebo_overlay.sh" "${OVERLAY_CONFIG}" >/dev/null
-export GZ_SIM_RESOURCE_PATH="${GZ_MODELS_DIR}:${GZ_WORLDS_DIR}:${PX4_BUNDLED_MODELS_DIR}:${PX4_EXTERNAL_MODELS_DIR}${GZ_SIM_RESOURCE_PATH:+:${GZ_SIM_RESOURCE_PATH}}"
+mkdir -p "${LOCAL_CACHE_WORLDS_DIR}"
+cp "${WORLD_FILE}" "${LOCAL_CACHE_WORLDS_DIR}/${WORLD_NAME}.sdf"
+export GZ_SIM_RESOURCE_PATH="${LOCAL_CACHE_MODELS_DIR}:${LOCAL_CACHE_WORLDS_DIR}:${GZ_MODELS_DIR}:${GZ_WORLDS_DIR}:${PX4_BUNDLED_MODELS_DIR}:${PX4_EXTERNAL_MODELS_DIR}${GZ_SIM_RESOURCE_PATH:+:${GZ_SIM_RESOURCE_PATH}}"
 
 "${AGENT_DIR}/build/MicroXRCEAgent" udp4 -p 8888 &
 AGENT_PID=$!
@@ -63,12 +74,11 @@ if [[ ! -x "${PX4_DIR}/build/px4_sitl_default/bin/px4" ]]; then
   popd >/dev/null
 fi
 
-GZ_ARGS=(-r "${WORLD_FILE}")
 if [[ "${HEADLESS}" == "1" ]]; then
-  GZ_ARGS=(-s -r "${WORLD_FILE}")
+  echo "HEADLESS=1 is ignored in standalone mode; simulation-gazebo starts the supported PX4 Gazebo server path." >&2
 fi
 
-gz sim "${GZ_ARGS[@]}" &
+python3 "${SIMULATION_GAZEBO_SCRIPT}" --world "${WORLD_NAME}" &
 GZ_PID=$!
 
 sleep 3

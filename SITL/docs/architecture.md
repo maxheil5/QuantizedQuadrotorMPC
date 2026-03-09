@@ -30,8 +30,8 @@
 ## Vehicle Model Overlay
 
 - The runtime no longer launches the stock `gz_x500` target directly.
-- `scripts/install_px4_gazebo_overlay.sh` generates `quantized_koopman_quad` by copying the PX4 x500 Gazebo model and patching the base-link mass and inertia with the MATLAB values from `get_params.m`.
-- `scripts/run_sitl_experiment.sh` starts Gazebo in standalone mode and then starts PX4 with `PX4_SIM_MODEL=gz_quantized_koopman_quad`.
+- `scripts/install_px4_gazebo_overlay.sh` generates `quantized_koopman_quad` by copying the PX4 x500 Gazebo model and patching the base-link mass and inertia with the MATLAB values from `get_params.m`. The generated model is mirrored into both `artifacts/generated/gazebo_models/` and `~/.simulation-gazebo/models/` so PX4's standalone Gazebo tooling can find it.
+- `scripts/run_sitl_experiment.sh` copies the custom world into `~/.simulation-gazebo/worlds/`, starts PX4's supported `simulation-gazebo` launcher for that world, and then starts PX4 with `PX4_SIM_MODEL=gz_quantized_koopman_quad`.
 - This keeps the ROS/PX4/Gazebo wiring intact while removing the direct dependency on the unmodified stock vehicle model.
 
 ## Artifact Flow
