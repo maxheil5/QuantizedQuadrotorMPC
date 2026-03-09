@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_PATH="${1:-${ROOT_DIR}/configs/sitl_runtime.yaml}"
@@ -13,19 +13,13 @@ HEADLESS="${HEADLESS:-0}"
 GZ_MODELS_DIR="${ROOT_DIR}/artifacts/generated/gazebo_models"
 GZ_WORLDS_DIR="${ROOT_DIR}/configs/gazebo/worlds"
 
-source_with_nounset_disabled() {
-  set +u
-  source "$1"
-  set -u
-}
-
 if [[ -d "${ROOT_DIR}/.venv" ]]; then
   source "${ROOT_DIR}/.venv/bin/activate"
 fi
 
-source_with_nounset_disabled /opt/ros/humble/setup.bash
+source /opt/ros/humble/setup.bash
 if [[ -f "${ROOT_DIR}/install/setup.bash" ]]; then
-  source_with_nounset_disabled "${ROOT_DIR}/install/setup.bash"
+  source "${ROOT_DIR}/install/setup.bash"
 fi
 
 if [[ ! -x "${AGENT_DIR}/build/MicroXRCEAgent" ]]; then
