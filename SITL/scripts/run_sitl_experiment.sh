@@ -13,13 +13,19 @@ HEADLESS="${HEADLESS:-0}"
 GZ_MODELS_DIR="${ROOT_DIR}/artifacts/generated/gazebo_models"
 GZ_WORLDS_DIR="${ROOT_DIR}/configs/gazebo/worlds"
 
+source_with_nounset_disabled() {
+  set +u
+  source "$1"
+  set -u
+}
+
 if [[ -d "${ROOT_DIR}/.venv" ]]; then
   source "${ROOT_DIR}/.venv/bin/activate"
 fi
 
-source /opt/ros/humble/setup.bash
+source_with_nounset_disabled /opt/ros/humble/setup.bash
 if [[ -f "${ROOT_DIR}/install/setup.bash" ]]; then
-  source "${ROOT_DIR}/install/setup.bash"
+  source_with_nounset_disabled "${ROOT_DIR}/install/setup.bash"
 fi
 
 if [[ ! -x "${AGENT_DIR}/build/MicroXRCEAgent" ]]; then

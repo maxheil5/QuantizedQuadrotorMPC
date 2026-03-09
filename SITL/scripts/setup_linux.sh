@@ -4,6 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOVE_FORTRESS_CONFLICTS=0
 
+source_with_nounset_disabled() {
+  set +u
+  source "$1"
+  set -u
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --remove-fortress-conflicts)
@@ -106,7 +112,7 @@ bash "${ROOT_DIR}/artifacts/external/PX4-Autopilot/Tools/setup/ubuntu.sh" --no-s
 python -m pip install -e "${ROOT_DIR}/src/quantized_quadrotor_sitl"
 bash "${ROOT_DIR}/scripts/install_px4_gazebo_overlay.sh"
 
-source /opt/ros/humble/setup.bash
+source_with_nounset_disabled /opt/ros/humble/setup.bash
 rosdep install --from-paths "${ROOT_DIR}/src" --ignore-src -r -y
 colcon build --symlink-install --base-paths "${ROOT_DIR}/src"
 
