@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from shutil import copytree
+from shutil import copytree, rmtree
 from xml.etree import ElementTree as ET
 
 import yaml
@@ -32,19 +32,18 @@ def load_overlay_config(path: Path) -> GazeboOverlayConfig:
     )
 
 
-def patch_model_sdf(model_sdf_text: str, config: GazeboOverlayConfig) -> str:
-    root = ET.fromstring(model_sdf_text)
-    model = root.find(".//model")
-    if model is None:
-        raise ValueError("Could not find <model> element in model.sdf")
-    model.set("name", config.target_model_name)
-
-    base_link = model.find(".//link[@name='base_link']")
+def _base_link(model: ET.Element) -> ET.Element | None:
+    base_link = model.find("./link[@name='base_link']")
+    if base_link is None:
+        base_link = model.find("./link")
+    if base_link is None:
+        base_link = model.find(".//link[@name='base_link']")
     if base_link is None:
         base_link = model.find(".//link")
-    if base_link is None:
-        raise ValueError("Could not find a <link> element in model.sdf")
+    return base_link
 
+
+def _apply_inertial_override(base_link: ET.Element, config: GazeboOverlayConfig) -> None:
     inertial = base_link.find("inertial")
     if inertial is None:
         inertial = ET.SubElement(base_link, "inertial")
@@ -69,6 +68,59 @@ def patch_model_sdf(model_sdf_text: str, config: GazeboOverlayConfig) -> str:
         if element is None:
             element = ET.SubElement(inertia, tag)
         element.text = f"{value:.6f}"
+
+
+def _merged_include_uri(model: ET.Element) -> str | None:
+    for include in model.findall("./include"):
+        if include.get("merge", "").lower() != "true":
+            continue
+        uri = include.find("uri")
+        if uri is None or uri.text is None:
+            continue
+        if uri.text.startswith("model://"):
+            return uri.text.removeprefix("model://")
+    return None
+
+
+def _replace_merged_include_uri(model: ET.Element, target_model_name: str) -> bool:
+    for include in model.findall("./include"):
+        if include.get("merge", "").lower() != "true":
+            continue
+        uri = include.find("uri")
+        if uri is None or uri.text is None:
+            continue
+        if uri.text.startswith("model://"):
+            uri.text = f"model://{target_model_name}"
+            return True
+    return False
+
+
+def _derived_target_name(config: GazeboOverlayConfig, source_name: str) -> str:
+    prefix = f"{config.source_model_name}_"
+    if source_name.startswith(prefix):
+        suffix = source_name[len(config.source_model_name) :]
+        return f"{config.target_model_name}{suffix}"
+    return f"{config.target_model_name}_{source_name}"
+
+
+def patch_model_sdf(
+    model_sdf_text: str,
+    config: GazeboOverlayConfig,
+    include_target_model_name: str | None = None,
+) -> str:
+    root = ET.fromstring(model_sdf_text)
+    model = root.find(".//model")
+    if model is None:
+        raise ValueError("Could not find <model> element in model.sdf")
+    model.set("name", config.target_model_name)
+
+    base_link = _base_link(model)
+    if base_link is not None:
+        _apply_inertial_override(base_link, config)
+    elif include_target_model_name is not None and _replace_merged_include_uri(model, include_target_model_name):
+        pass
+    else:
+        raise ValueError("Could not find a patchable <link> element or merged <include> in model.sdf")
 
     xml_text = ET.tostring(root, encoding="unicode")
     return "<?xml version=\"1.0\" ?>\n" + xml_text
@@ -97,17 +149,7 @@ def install_overlay(source_model_dir: Path, destination_root: Path, config: Gaze
 
     destination_dir = destination_root / config.target_model_name
     if destination_dir.exists():
-        for child in destination_dir.iterdir():
-            if child.is_dir():
-                for nested in sorted(child.rglob("*"), reverse=True):
-                    if nested.is_file() or nested.is_symlink():
-                        nested.unlink()
-                    elif nested.is_dir():
-                        nested.rmdir()
-                child.rmdir()
-            else:
-                child.unlink()
-        destination_dir.rmdir()
+        rmtree(destination_dir)
 
     copytree(source_model_dir, destination_dir)
 
@@ -116,7 +158,32 @@ def install_overlay(source_model_dir: Path, destination_root: Path, config: Gaze
         raise FileNotFoundError(
             f"Expected {model_sdf}. The overlay installer currently requires a concrete model.sdf file."
         )
-    model_sdf.write_text(patch_model_sdf(model_sdf.read_text(encoding="utf-8"), config), encoding="utf-8")
+    model_sdf_text = model_sdf.read_text(encoding="utf-8")
+    root = ET.fromstring(model_sdf_text)
+    model = root.find(".//model")
+    include_model_name = _merged_include_uri(model) if model is not None and _base_link(model) is None else None
+    include_target_model_name = None
+    if include_model_name is not None:
+        include_source_dir = source_model_dir.parent / include_model_name
+        if not include_source_dir.exists():
+            raise FileNotFoundError(
+                f"Expected merged include source model directory: {include_source_dir}"
+            )
+        include_target_model_name = _derived_target_name(config, include_model_name)
+        include_config = GazeboOverlayConfig(
+            source_model_name=include_model_name,
+            target_model_name=include_target_model_name,
+            mass_kg=config.mass_kg,
+            ixx=config.ixx,
+            iyy=config.iyy,
+            izz=config.izz,
+        )
+        install_overlay(include_source_dir, destination_root, include_config)
+
+    model_sdf.write_text(
+        patch_model_sdf(model_sdf_text, config, include_target_model_name=include_target_model_name),
+        encoding="utf-8",
+    )
 
     model_config = destination_dir / "model.config"
     if model_config.exists():
@@ -140,4 +207,3 @@ def install_overlay(source_model_dir: Path, destination_root: Path, config: Gaze
         encoding="utf-8",
     )
     return destination_dir
-
