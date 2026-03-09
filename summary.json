@@ -1,0 +1,99 @@
+{
+  "config": {
+    "dt": 0.001,
+    "include_unquantized": false,
+    "mpc": {
+      "pred_horizon": 10,
+      "sim_duration": 1.2,
+      "sim_timestep": 0.001,
+      "use_casadi": false
+    },
+    "n_basis": 3,
+    "output_root": "/home/soarbuckiadm/Desktop/QuantizedQuadrotorMPC-main/SITL/results/offline",
+    "paper_tracking_word_lengths": [
+      4,
+      8,
+      12,
+      14,
+      16
+    ],
+    "prediction_eval_n_control": 1,
+    "profile_name": "paper_v2",
+    "random_seed": 2141444,
+    "reference_horizon_duration": 10.0,
+    "run_count": 50,
+    "tracking_enabled": true,
+    "train_traj_duration": 0.1,
+    "training_n_control": 100,
+    "word_lengths": [
+      4,
+      8,
+      12,
+      14,
+      16
+    ]
+  },
+  "notes": [
+    "MATLAB behavior is preserved ahead of paper text where they differ.",
+    "Dither amplitude follows MATLAB/Dither_Func.m, which is narrower than the Schuchman interval stated in the paper."
+  ],
+  "prediction_error_unquantized": 0.005514985557120152,
+  "tracking_error_unquantized": 0.05364639302143858,
+  "word_lengths": [
+    {
+      "matrix_a_difference_mean": 3.386524312027282,
+      "matrix_a_difference_std": 0.41597306263970685,
+      "matrix_b_difference_mean": 57.2051222472673,
+      "matrix_b_difference_std": 1.7336030424791196,
+      "prediction_error_mean": 0.6904993289014221,
+      "prediction_error_std": 0.2808420725876302,
+      "tracking_error_mean": 1.3030948538339049,
+      "tracking_error_std": 0.2949463167029281,
+      "word_length": "4"
+    },
+    {
+      "matrix_a_difference_mean": 1.0071083814925923,
+      "matrix_a_difference_std": 0.1642625347018117,
+      "matrix_b_difference_mean": 3.7285582752142328,
+      "matrix_b_difference_std": 0.14396415124453146,
+      "prediction_error_mean": 0.047045019785525506,
+      "prediction_error_std": 0.026176771476527687,
+      "tracking_error_mean": 0.6873388203265698,
+      "tracking_error_std": 0.24651794997928864,
+      "word_length": "8"
+    },
+    {
+      "matrix_a_difference_mean": 0.0910956375125212,
+      "matrix_a_difference_std": 0.028182258270089567,
+      "matrix_b_difference_mean": 0.04130378148916788,
+      "matrix_b_difference_std": 0.005553658765868968,
+      "prediction_error_mean": 0.02106132900792156,
+      "prediction_error_std": 0.016850713981074624,
+      "tracking_error_mean": 0.11265703438891046,
+      "tracking_error_std": 0.017264627944894206,
+      "word_length": "12"
+    },
+    {
+      "matrix_a_difference_mean": 0.02957703982927321,
+      "matrix_a_difference_std": 0.01636748276991151,
+      "matrix_b_difference_mean": 0.012213945503907038,
+      "matrix_b_difference_std": 0.004569673643721853,
+      "prediction_error_mean": 0.02409391044998857,
+      "prediction_error_std": 0.019149102824888808,
+      "tracking_error_mean": 0.056904271107795175,
+      "tracking_error_std": 0.006105799974589921,
+      "word_length": "14"
+    },
+    {
+      "matrix_a_difference_mean": 0.08425587577646457,
+      "matrix_a_difference_std": 0.22363572296826695,
+      "matrix_b_difference_mean": 0.026995627787180454,
+      "matrix_b_difference_std": 0.0701344770104489,
+      "prediction_error_mean": 0.023410976445082107,
+      "prediction_error_std": 0.02346627300529123,
+      "tracking_error_mean": 0.05407495896697074,
+      "tracking_error_std": 0.0016937503863855997,
+      "word_length": "16"
+    }
+  ]
+}
