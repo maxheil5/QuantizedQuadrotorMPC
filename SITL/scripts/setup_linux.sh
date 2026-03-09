@@ -75,7 +75,7 @@ rosdep update
 python3 -m venv "${ROOT_DIR}/.venv"
 source "${ROOT_DIR}/.venv/bin/activate"
 python -m pip install --upgrade pip setuptools wheel
-python -m pip install numpy scipy matplotlib pandas pyyaml osqp pytest
+python -m pip install numpy scipy matplotlib pandas pyyaml osqp pytest catkin_pkg empy lark-parser
 
 if [[ ! -d "${ROOT_DIR}/artifacts/external/PX4-Autopilot/.git" ]]; then
   git clone https://github.com/PX4/PX4-Autopilot.git "${ROOT_DIR}/artifacts/external/PX4-Autopilot"
