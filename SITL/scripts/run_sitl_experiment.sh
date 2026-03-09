@@ -12,11 +12,16 @@ SIM_MODEL_NAME="${PX4_SIM_MODEL:-gz_quantized_koopman_quad}"
 HEADLESS="${HEADLESS:-0}"
 GZ_MODELS_DIR="${ROOT_DIR}/artifacts/generated/gazebo_models"
 GZ_WORLDS_DIR="${ROOT_DIR}/configs/gazebo/worlds"
+PX4_BUNDLED_MODELS_DIR="${PX4_DIR}/Tools/simulation/gz/models"
+PX4_EXTERNAL_MODELS_DIR="${ROOT_DIR}/artifacts/external/PX4-gazebo-models/models"
+PACKAGE_ROOT="${ROOT_DIR}/src/quantized_quadrotor_sitl"
 
 if [[ -d "${ROOT_DIR}/.venv" ]]; then
   source "${ROOT_DIR}/.venv/bin/activate"
 fi
 
+export PYTHONNOUSERSITE=1
+export PYTHONPATH="${PACKAGE_ROOT}:${PYTHONPATH:-}"
 source /opt/ros/humble/setup.bash
 if [[ -f "${ROOT_DIR}/install/setup.bash" ]]; then
   source "${ROOT_DIR}/install/setup.bash"
@@ -38,7 +43,7 @@ if [[ ! -f "${WORLD_FILE}" ]]; then
 fi
 
 bash "${ROOT_DIR}/scripts/install_px4_gazebo_overlay.sh" "${OVERLAY_CONFIG}" >/dev/null
-export GZ_SIM_RESOURCE_PATH="${GZ_MODELS_DIR}:${GZ_WORLDS_DIR}${GZ_SIM_RESOURCE_PATH:+:${GZ_SIM_RESOURCE_PATH}}"
+export GZ_SIM_RESOURCE_PATH="${GZ_MODELS_DIR}:${GZ_WORLDS_DIR}:${PX4_BUNDLED_MODELS_DIR}:${PX4_EXTERNAL_MODELS_DIR}${GZ_SIM_RESOURCE_PATH:+:${GZ_SIM_RESOURCE_PATH}}"
 
 "${AGENT_DIR}/build/MicroXRCEAgent" udp4 -p 8888 &
 AGENT_PID=$!
@@ -47,6 +52,8 @@ cleanup() {
   kill "${AGENT_PID}" >/dev/null 2>&1 || true
   kill "${GZ_PID:-0}" >/dev/null 2>&1 || true
   kill "${PX4_PID:-0}" >/dev/null 2>&1 || true
+  kill "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
+  kill "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -76,4 +83,10 @@ env \
 PX4_PID=$!
 popd >/dev/null
 
-ros2 launch quantized_quadrotor_sitl quantized_quadrotor_sitl.launch.py config:="${CONFIG_PATH}"
+python -m quantized_quadrotor_sitl.ros.telemetry_adapter_node --ros-args -p config_path:="${CONFIG_PATH}" &
+TELEMETRY_PID=$!
+
+python -m quantized_quadrotor_sitl.ros.controller_node --ros-args -p config_path:="${CONFIG_PATH}" &
+CONTROLLER_PID=$!
+
+wait "${CONTROLLER_PID}"

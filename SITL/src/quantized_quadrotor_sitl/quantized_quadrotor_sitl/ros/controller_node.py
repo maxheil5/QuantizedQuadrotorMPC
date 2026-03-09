@@ -7,6 +7,7 @@ import numpy as np
 import rclpy
 from px4_msgs.msg import OffboardControlMode, VehicleCommand, VehicleThrustSetpoint, VehicleTorqueSetpoint
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float64MultiArray
 
 from ..core.artifacts import load_edmd_artifact
@@ -35,6 +36,12 @@ class ControllerNode(Node):
         self.step_index = 0
         self.warmup_cycles = 0
         self.armed = False
+        px4_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
 
         self.state_subscription = self.create_subscription(
             Float64MultiArray,
@@ -47,22 +54,22 @@ class ControllerNode(Node):
         self.offboard_control_mode_publisher = self.create_publisher(
             OffboardControlMode,
             self.config.offboard_control_mode_topic,
-            10,
+            px4_qos,
         )
         self.vehicle_command_publisher = self.create_publisher(
             VehicleCommand,
             self.config.vehicle_command_topic,
-            10,
+            px4_qos,
         )
         self.vehicle_thrust_publisher = self.create_publisher(
             VehicleThrustSetpoint,
             self.config.vehicle_thrust_setpoint_topic,
-            10,
+            px4_qos,
         )
         self.vehicle_torque_publisher = self.create_publisher(
             VehicleTorqueSetpoint,
             self.config.vehicle_torque_setpoint_topic,
-            10,
+            px4_qos,
         )
 
         results_dir = ensure_dir(self._resolve_path(self.config.results_dir))

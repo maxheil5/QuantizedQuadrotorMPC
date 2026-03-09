@@ -4,6 +4,7 @@ import numpy as np
 import rclpy
 from px4_msgs.msg import VehicleOdometry
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float64MultiArray
 
 from ..core.config import RuntimeConfig, load_runtime_config
@@ -15,12 +16,18 @@ class TelemetryAdapterNode(Node):
         super().__init__("telemetry_adapter_node")
         config_path = self.declare_parameter("config_path", "configs/sitl_runtime.yaml").value
         self.config: RuntimeConfig = load_runtime_config(self._resolve_path(config_path))
+        px4_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
         self.publisher = self.create_publisher(Float64MultiArray, self.config.state_topic, 10)
         self.subscription = self.create_subscription(
             VehicleOdometry,
             self.config.vehicle_odometry_topic,
             self._handle_vehicle_odometry,
-            10,
+            px4_qos,
         )
 
     def _resolve_path(self, config_path: str):
