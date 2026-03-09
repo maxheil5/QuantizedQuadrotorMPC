@@ -3,8 +3,8 @@
 ## Runtime Data Path
 
 1. PX4 SITL runs the vehicle in Gazebo Harmonic.
-2. PX4 publishes `VehicleOdometry` over the ROS 2 bridge.
-3. `telemetry_adapter_node` converts PX4 NED/FRD telemetry to the MATLAB-facing state convention used by the parity layer.
+2. PX4 publishes estimator telemetry over the ROS 2 bridge.
+3. `telemetry_adapter_node` converts PX4 NED/FRD telemetry to the MATLAB-facing state convention used by the parity layer, preferring `VehicleOdometry` when it exists and otherwise assembling the same state from `VehicleLocalPosition`, `VehicleAttitude`, and `VehicleAngularVelocity`.
 4. `controller_node` loads an offline EDMD artifact produced by the parity runner.
 5. The controller optionally quantizes the telemetry path, the control path, both, or neither.
 6. The controller solves the lifted QP and publishes `VehicleThrustSetpoint` and `VehicleTorqueSetpoint`.

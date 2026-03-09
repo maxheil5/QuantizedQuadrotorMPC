@@ -9,6 +9,9 @@ state_topic: /quantized_mpc/state18
 state_log_topic: /quantized_mpc/state18_quantized
 control_debug_topic: /quantized_mpc/control_debug
 vehicle_odometry_topic: /fmu/out/vehicle_odometry
+vehicle_local_position_topic: /fmu/out/vehicle_local_position
+vehicle_attitude_topic: /fmu/out/vehicle_attitude
+vehicle_angular_velocity_topic: /fmu/out/vehicle_angular_velocity
 offboard_control_mode_topic: /fmu/in/offboard_control_mode
 vehicle_command_topic: /fmu/in/vehicle_command
 vehicle_thrust_setpoint_topic: /fmu/in/vehicle_thrust_setpoint
@@ -24,4 +27,3 @@ mpc:
   sim_timestep: 0.001
   sim_duration: 1.2
   use_casadi: false
-

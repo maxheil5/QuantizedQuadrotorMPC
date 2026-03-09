@@ -78,6 +78,8 @@ Outputs are written under `results/offline/<profile>/latest/`.
 
 The runtime no longer launches the stock `gz_x500` target directly. It first generates `quantized_koopman_quad`, an x500-derived Gazebo model with the MATLAB mass and inertia overrides from `get_params.m`, and then spawns it through PX4 standalone mode so the controller still runs inside the ROS/PX4/Gazebo loop.
 
+The telemetry adapter accepts PX4 `VehicleOdometry` when it is available, but the SITL runtime also reconstructs the MATLAB state from the estimator topics `VehicleLocalPosition`, `VehicleAttitude`, and `VehicleAngularVelocity`. This matches the PX4 topic set that is actually present on the Ubuntu 22.04 target machine.
+
 After setup and after generating an offline model artifact, start the SITL stack with:
 
 ```bash

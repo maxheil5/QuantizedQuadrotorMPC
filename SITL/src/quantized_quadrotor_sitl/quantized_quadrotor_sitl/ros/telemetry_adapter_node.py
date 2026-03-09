@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import rclpy
-from px4_msgs.msg import VehicleOdometry
+from px4_msgs.msg import VehicleAngularVelocity, VehicleAttitude, VehicleLocalPosition, VehicleOdometry
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float64MultiArray
@@ -23,10 +23,32 @@ class TelemetryAdapterNode(Node):
             depth=1,
         )
         self.publisher = self.create_publisher(Float64MultiArray, self.config.state_topic, 10)
-        self.subscription = self.create_subscription(
+        self._position_ned: np.ndarray | None = None
+        self._velocity_ned: np.ndarray | None = None
+        self._quaternion_wxyz_ned_frd: np.ndarray | None = None
+        self._angular_velocity_frd: np.ndarray | None = None
+        self.odometry_subscription = self.create_subscription(
             VehicleOdometry,
             self.config.vehicle_odometry_topic,
             self._handle_vehicle_odometry,
+            px4_qos,
+        )
+        self.local_position_subscription = self.create_subscription(
+            VehicleLocalPosition,
+            self.config.vehicle_local_position_topic,
+            self._handle_vehicle_local_position,
+            px4_qos,
+        )
+        self.attitude_subscription = self.create_subscription(
+            VehicleAttitude,
+            self.config.vehicle_attitude_topic,
+            self._handle_vehicle_attitude,
+            px4_qos,
+        )
+        self.angular_velocity_subscription = self.create_subscription(
+            VehicleAngularVelocity,
+            self.config.vehicle_angular_velocity_topic,
+            self._handle_vehicle_angular_velocity,
             px4_qos,
         )
 
@@ -45,6 +67,38 @@ class TelemetryAdapterNode(Node):
             np.array(msg.q, dtype=float),
             np.array(msg.angular_velocity, dtype=float),
         )
+        self._publish_state(state)
+
+    def _handle_vehicle_local_position(self, msg: VehicleLocalPosition) -> None:
+        self._position_ned = np.array([msg.x, msg.y, msg.z], dtype=float)
+        self._velocity_ned = np.array([msg.vx, msg.vy, msg.vz], dtype=float)
+        self._publish_estimator_state_if_ready()
+
+    def _handle_vehicle_attitude(self, msg: VehicleAttitude) -> None:
+        self._quaternion_wxyz_ned_frd = np.array(msg.q, dtype=float)
+        self._publish_estimator_state_if_ready()
+
+    def _handle_vehicle_angular_velocity(self, msg: VehicleAngularVelocity) -> None:
+        self._angular_velocity_frd = np.array(msg.xyz, dtype=float)
+        self._publish_estimator_state_if_ready()
+
+    def _publish_estimator_state_if_ready(self) -> None:
+        if (
+            self._position_ned is None
+            or self._velocity_ned is None
+            or self._quaternion_wxyz_ned_frd is None
+            or self._angular_velocity_frd is None
+        ):
+            return
+        state = vehicle_odometry_to_state18(
+            self._position_ned,
+            self._velocity_ned,
+            self._quaternion_wxyz_ned_frd,
+            self._angular_velocity_frd,
+        )
+        self._publish_state(state)
+
+    def _publish_state(self, state: np.ndarray) -> None:
         payload = Float64MultiArray()
         payload.data = state.tolist()
         self.publisher.publish(payload)
