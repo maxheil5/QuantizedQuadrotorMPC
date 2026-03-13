@@ -103,6 +103,10 @@ def _derived_target_name(config: GazeboOverlayConfig, source_name: str) -> str:
     return f"{config.target_model_name}_{source_name}"
 
 
+def _rewrite_model_uri_references(xml_text: str, source_model_name: str, target_model_name: str) -> str:
+    return xml_text.replace(f"model://{source_model_name}/", f"model://{target_model_name}/")
+
+
 def patch_model_sdf(
     model_sdf_text: str,
     config: GazeboOverlayConfig,
@@ -123,6 +127,7 @@ def patch_model_sdf(
         raise ValueError("Could not find a patchable <link> element or merged <include> in model.sdf")
 
     xml_text = ET.tostring(root, encoding="unicode")
+    xml_text = _rewrite_model_uri_references(xml_text, config.source_model_name, config.target_model_name)
     return "<?xml version=\"1.0\" ?>\n" + xml_text
 
 

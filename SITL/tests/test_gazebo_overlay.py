@@ -82,6 +82,13 @@ def test_install_overlay_patches_merged_base_model(tmp_path):
                 </inertia>
               </inertial>
             </link>
+            <visual name="base_visual">
+              <geometry>
+                <mesh>
+                  <uri>model://x500_base/meshes/frame.dae</uri>
+                </mesh>
+              </geometry>
+            </visual>
           </model>
         </sdf>
         """,
@@ -104,3 +111,4 @@ def test_install_overlay_patches_merged_base_model(tmp_path):
     assert 'model name="quantized_koopman_quad_base"' in base_sdf
     assert "<mass>4.340000</mass>" in base_sdf
     assert "<ixx>0.082000</ixx>" in base_sdf
+    assert "model://quantized_koopman_quad_base/meshes/frame.dae" in base_sdf
