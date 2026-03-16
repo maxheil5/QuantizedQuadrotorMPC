@@ -43,6 +43,8 @@ output_dir.mkdir(parents=True, exist_ok=True)
 local_cache_dir.mkdir(parents=True, exist_ok=True)
 generated_install = install_overlay(source_dir, output_dir, config)
 cache_install = install_overlay(source_dir, local_cache_dir, config)
+bundled_install = install_overlay(source_dir, px4_bundled_models_dir, config)
 print(generated_install)
 print(cache_install)
+print(bundled_install)
 PY
