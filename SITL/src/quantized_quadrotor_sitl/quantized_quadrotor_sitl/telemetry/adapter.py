@@ -57,5 +57,6 @@ def physical_control_to_px4_wrench(
     moments_frd = FRD_TO_FLU @ control[1:4]
     normalized_moments = np.divide(moments_frd, max_body_torque_nm, out=np.zeros(3), where=max_body_torque_nm != 0.0)
     normalized_moments = np.clip(normalized_moments, -1.0, 1.0)
-    thrust_body = np.array([0.0, 0.0, collective], dtype=float)
+    # PX4 interprets thrust setpoints in the body FRD frame, so upward thrust is negative body-z.
+    thrust_body = np.array([0.0, 0.0, -collective], dtype=float)
     return thrust_body, normalized_moments
