@@ -45,6 +45,41 @@ def test_patch_model_config_updates_name():
     assert "MATLAB mass/inertia overrides" in patched
 
 
+def test_patch_model_sdf_scales_motor_constant_with_mass_ratio():
+    original = """
+    <sdf version="1.9">
+      <model name="x500">
+        <plugin filename="gz-sim-multicopter-motor-model-system" name="gz::sim::systems::MulticopterMotorModel">
+          <motorConstant>8.54858e-06</motorConstant>
+        </plugin>
+        <link name="base_link">
+          <inertial>
+            <mass>2.0</mass>
+            <inertia>
+              <ixx>1</ixx>
+              <iyy>1</iyy>
+              <izz>1</izz>
+            </inertia>
+          </inertial>
+        </link>
+      </model>
+    </sdf>
+    """
+    config = GazeboOverlayConfig(
+        "x500",
+        "quantized_koopman_quad",
+        4.34,
+        0.082,
+        0.0845,
+        0.1377,
+        source_mass_kg=2.0,
+    )
+
+    patched = patch_model_sdf(original, config)
+
+    assert "<motorConstant>1.85504286e-05</motorConstant>" in patched
+
+
 def test_install_overlay_patches_merged_base_model(tmp_path):
     source_root = tmp_path / "models"
     x500_dir = source_root / "x500"
@@ -100,15 +135,94 @@ def test_install_overlay_patches_merged_base_model(tmp_path):
     )
 
     destination_root = tmp_path / "generated"
-    config = GazeboOverlayConfig("x500", "quantized_koopman_quad", 4.34, 0.082, 0.0845, 0.1377)
+    config = GazeboOverlayConfig(
+        "x500",
+        "quantized_koopman_quad",
+        4.34,
+        0.082,
+        0.0845,
+        0.1377,
+        source_mass_kg=2.0,
+    )
     install_overlay(x500_dir, destination_root, config)
 
     top_level_sdf = (destination_root / "quantized_koopman_quad" / "model.sdf").read_text(encoding="utf-8")
     assert "model://quantized_koopman_quad_base" in top_level_sdf
     assert 'model name="quantized_koopman_quad"' in top_level_sdf
+    assert "<motorConstant>1.85504286e-05</motorConstant>" not in top_level_sdf
 
     base_sdf = (destination_root / "quantized_koopman_quad_base" / "model.sdf").read_text(encoding="utf-8")
     assert 'model name="quantized_koopman_quad_base"' in base_sdf
     assert "<mass>4.340000</mass>" in base_sdf
     assert "<ixx>0.082000</ixx>" in base_sdf
     assert "model://quantized_koopman_quad_base/meshes/frame.dae" in base_sdf
+
+
+def test_install_overlay_scales_top_level_motor_plugins(tmp_path):
+    source_root = tmp_path / "models"
+    x500_dir = source_root / "x500"
+    x500_dir.mkdir(parents=True)
+    x500_dir.joinpath("model.sdf").write_text(
+        """
+        <sdf version="1.9">
+          <model name="x500">
+            <include merge="true">
+              <uri>model://x500_base</uri>
+            </include>
+            <plugin filename="gz-sim-multicopter-motor-model-system" name="gz::sim::systems::MulticopterMotorModel">
+              <motorConstant>8.54858e-06</motorConstant>
+            </plugin>
+          </model>
+        </sdf>
+        """,
+        encoding="utf-8",
+    )
+    x500_dir.joinpath("model.config").write_text(
+        "<model><name>x500</name><description>top level</description></model>",
+        encoding="utf-8",
+    )
+
+    x500_base_dir = source_root / "x500_base"
+    x500_base_dir.mkdir()
+    x500_base_dir.joinpath("model.sdf").write_text(
+        """
+        <sdf version="1.9">
+          <model name="x500_base">
+            <link name="base_link">
+              <inertial>
+                <mass>2.0</mass>
+                <inertia>
+                  <ixx>1.0</ixx>
+                  <iyy>1.0</iyy>
+                  <izz>1.0</izz>
+                </inertia>
+              </inertial>
+            </link>
+          </model>
+        </sdf>
+        """,
+        encoding="utf-8",
+    )
+    x500_base_dir.joinpath("model.config").write_text(
+        "<model><name>x500_base</name><description>base</description></model>",
+        encoding="utf-8",
+    )
+
+    destination_root = tmp_path / "generated"
+    config = GazeboOverlayConfig(
+        "x500",
+        "quantized_koopman_quad",
+        4.34,
+        0.082,
+        0.0845,
+        0.1377,
+        source_mass_kg=2.0,
+    )
+    install_overlay(x500_dir, destination_root, config)
+
+    top_level_sdf = (destination_root / "quantized_koopman_quad" / "model.sdf").read_text(encoding="utf-8")
+    assert "<motorConstant>1.85504286e-05</motorConstant>" in top_level_sdf
+
+    metadata = (destination_root / "quantized_koopman_quad" / "QUANTIZED_KOOPMAN_MODEL.txt").read_text(encoding="utf-8")
+    assert "source_mass_kg=2.0" in metadata
+    assert "motor_constant_scale=2.17" in metadata

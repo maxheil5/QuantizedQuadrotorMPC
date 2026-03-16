@@ -16,6 +16,7 @@ class GazeboOverlayConfig:
     ixx: float
     iyy: float
     izz: float
+    source_mass_kg: float | None = None
 
 
 def load_overlay_config(path: Path) -> GazeboOverlayConfig:
@@ -29,6 +30,7 @@ def load_overlay_config(path: Path) -> GazeboOverlayConfig:
         ixx=float(inertia["ixx"]),
         iyy=float(inertia["iyy"]),
         izz=float(inertia["izz"]),
+        source_mass_kg=None if payload.get("source_mass_kg") is None else float(payload["source_mass_kg"]),
     )
 
 
@@ -68,6 +70,27 @@ def _apply_inertial_override(base_link: ET.Element, config: GazeboOverlayConfig)
         if element is None:
             element = ET.SubElement(inertia, tag)
         element.text = f"{value:.6f}"
+
+
+def _motor_constant_scale(config: GazeboOverlayConfig) -> float:
+    if config.source_mass_kg is None or config.source_mass_kg <= 0.0:
+        return 1.0
+    return config.mass_kg / config.source_mass_kg
+
+
+def _apply_motor_model_override(model: ET.Element, config: GazeboOverlayConfig) -> None:
+    scale = _motor_constant_scale(config)
+    if abs(scale - 1.0) < 1.0e-9:
+        return
+
+    for plugin in model.findall("./plugin"):
+        if plugin.get("name") != "gz::sim::systems::MulticopterMotorModel":
+            continue
+        motor_constant = plugin.find("motorConstant")
+        if motor_constant is None or motor_constant.text is None:
+            continue
+        motor_constant_value = float(motor_constant.text)
+        motor_constant.text = f"{motor_constant_value * scale:.8e}"
 
 
 def _merged_include_uri(model: ET.Element) -> str | None:
@@ -117,6 +140,7 @@ def patch_model_sdf(
     if model is None:
         raise ValueError("Could not find <model> element in model.sdf")
     model.set("name", config.target_model_name)
+    _apply_motor_model_override(model, config)
 
     base_link = _base_link(model)
     if base_link is not None:
@@ -182,6 +206,7 @@ def install_overlay(source_model_dir: Path, destination_root: Path, config: Gaze
             ixx=config.ixx,
             iyy=config.iyy,
             izz=config.izz,
+            source_mass_kg=config.source_mass_kg,
         )
         install_overlay(include_source_dir, destination_root, include_config)
 
@@ -207,6 +232,8 @@ def install_overlay(source_model_dir: Path, destination_root: Path, config: Gaze
                 f"ixx={config.ixx}",
                 f"iyy={config.iyy}",
                 f"izz={config.izz}",
+                f"source_mass_kg={config.source_mass_kg}",
+                f"motor_constant_scale={_motor_constant_scale(config)}",
             ]
         ),
         encoding="utf-8",
