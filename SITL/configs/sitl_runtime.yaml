@@ -1,4 +1,4 @@
-control_rate_hz: 1000.0
+control_rate_hz: 100.0
 offboard_warmup_cycles: 10
 arm_retry_cycles: 500
 force_arm_in_sitl: true
@@ -6,6 +6,7 @@ force_arm_magic: 21196.0
 model_artifact: results/offline/paper_v2/latest/edmd_unquantized.npz
 quantization_mode: none
 quantized_word_length: 12
+reference_mode: hover_step
 reference_seed: 2141444
 reference_duration_s: 10.0
 state_topic: /quantized_mpc/state18

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import csv
+from enum import Enum
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import rclpy
@@ -14,7 +16,7 @@ from std_msgs.msg import Float64MultiArray
 from ..core.artifacts import load_edmd_artifact
 from ..core.config import RuntimeConfig, load_runtime_config
 from ..edmd.basis import lift_state
-from ..experiments.training_data import get_random_trajectories
+from ..experiments.runtime_reference import build_runtime_reference
 from ..mpc.qp import get_qp
 from ..mpc.simulate import solve_qp
 from ..quantization.dither import dither_signal
@@ -22,6 +24,15 @@ from ..quantization.partition import partition_range
 from ..telemetry.adapter import physical_control_to_px4_wrench
 from ..utils.io import ensure_dir
 from .offboard import offboard_control_mode_msg
+
+
+class FlightPhase(str, Enum):
+    WAITING_FOR_STATE = "waiting_for_state"
+    WARMUP = "warmup"
+    WAITING_FOR_ARM = "waiting_for_arm"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class ControllerNode(Node):
@@ -34,10 +45,15 @@ class ControllerNode(Node):
         self.latest_state: np.ndarray | None = None
         self.reference_lifted: np.ndarray | None = None
         self.reference_physical: np.ndarray | None = None
+        self.reference_sample_count = 0
         self.step_index = 0
         self.warmup_cycles = 0
         self.arm_retry_counter = 0
         self.armed = False
+        self.flight_phase = FlightPhase.WAITING_FOR_STATE
+        self.experiment_start_ns: int | None = None
+        self.last_active_tick_ns: int | None = None
+        self.shutdown_requested = False
         px4_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -88,6 +104,10 @@ class ControllerNode(Node):
             [
                 "step",
                 "timestamp_ns",
+                "experiment_time_s",
+                "reference_index",
+                "tick_dt_ms",
+                "solver_ms",
                 *[f"state_raw_{idx}" for idx in range(18)],
                 *[f"state_used_{idx}" for idx in range(18)],
                 *[f"control_raw_{idx}" for idx in range(4)],
@@ -117,12 +137,28 @@ class ControllerNode(Node):
         self.armed = msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
 
     def _initialize_reference(self, state0: np.ndarray) -> None:
-        t_ref = np.arange(0.0, self.config.reference_duration_s + self.config.mpc.sim_timestep, self.config.mpc.sim_timestep)
-        x_ref, _, _, _, _, _ = get_random_trajectories(state0, 1, t_ref, "mpc", self.rng)
-        self.reference_physical = x_ref[:, 1:]
+        self.reference_physical = build_runtime_reference(
+            state0,
+            self.config.reference_mode,
+            self.config.reference_duration_s,
+            self.config.mpc.sim_timestep,
+            self.rng,
+        )
+        self.reference_sample_count = self.reference_physical.shape[1]
         self.reference_lifted = np.column_stack(
             [lift_state(self.reference_physical[:, idx], self.model.n_basis) for idx in range(self.reference_physical.shape[1])]
         )
+
+    def _reference_window(self, reference_index: int) -> np.ndarray:
+        assert self.reference_lifted is not None
+        horizon = self.config.mpc.pred_horizon
+        end_index = min(reference_index + horizon, self.reference_sample_count)
+        window = self.reference_lifted[:, reference_index:end_index]
+        if window.shape[1] == horizon:
+            return window
+        final_column = self.reference_lifted[:, -1:]
+        pad_width = horizon - window.shape[1]
+        return np.hstack([window, np.repeat(final_column, pad_width, axis=1)])
 
     def _quantize_vector(self, values: np.ndarray, min_key: str, max_key: str) -> np.ndarray:
         epsilon, min_new, max_new, _, mid_points = partition_range(
@@ -172,6 +208,17 @@ class ControllerNode(Node):
             param2=arm_param2,
         )
 
+    def _finish_run(self, phase: FlightPhase, message: str) -> None:
+        if self.flight_phase in {FlightPhase.COMPLETED, FlightPhase.FAILED}:
+            return
+        self.flight_phase = phase
+        self._log_stream.flush()
+        if phase == FlightPhase.FAILED:
+            self.get_logger().error(message)
+        else:
+            self.get_logger().info(message)
+        self.shutdown_requested = True
+
     def _publish_wrench(self, control_used: np.ndarray) -> None:
         if not rclpy.ok():
             return
@@ -200,23 +247,58 @@ class ControllerNode(Node):
                 raise
 
     def _control_tick(self) -> None:
-        self._publish_offboard_mode()
+        if self.shutdown_requested:
+            if rclpy.ok():
+                rclpy.shutdown()
+            return
+
+        now_ns = self.get_clock().now().nanoseconds
         if self.latest_state is None or self.reference_lifted is None or self.reference_physical is None:
+            self.flight_phase = FlightPhase.WAITING_FOR_STATE
             return
 
-        if self.warmup_cycles < self.config.offboard_warmup_cycles:
-            self.warmup_cycles += 1
+        if self.flight_phase == FlightPhase.WAITING_FOR_STATE:
+            self.flight_phase = FlightPhase.WARMUP
+
+        if self.flight_phase == FlightPhase.WARMUP:
+            self._publish_offboard_mode()
+            if self.warmup_cycles < self.config.offboard_warmup_cycles:
+                self.warmup_cycles += 1
+                return
+            self.flight_phase = FlightPhase.WAITING_FOR_ARM
+
+        if self.flight_phase == FlightPhase.WAITING_FOR_ARM:
+            self._publish_offboard_mode()
+            if self.armed:
+                self.flight_phase = FlightPhase.ACTIVE
+                self.experiment_start_ns = now_ns
+                self.last_active_tick_ns = None
+            else:
+                retry_cycles = max(1, self.config.arm_retry_cycles)
+                if self.arm_retry_counter % retry_cycles == 0:
+                    self._request_offboard_arm()
+                self.arm_retry_counter += 1
+                return
+
+        if self.flight_phase != FlightPhase.ACTIVE:
             return
 
+        self._publish_offboard_mode()
         if not self.armed:
-            retry_cycles = max(1, self.config.arm_retry_cycles)
-            if self.arm_retry_counter % retry_cycles == 0:
-                self._request_offboard_arm()
-            self.arm_retry_counter += 1
+            self._finish_run(FlightPhase.FAILED, "Vehicle disarmed before the SITL reference completed.")
             return
 
-        if self.step_index + self.config.mpc.pred_horizon >= self.reference_lifted.shape[1]:
+        if self.experiment_start_ns is None:
+            self.experiment_start_ns = now_ns
+
+        experiment_time_s = max(0.0, (now_ns - self.experiment_start_ns) / 1.0e9)
+        reference_index = int(np.floor(experiment_time_s / self.config.mpc.sim_timestep + 1.0e-9))
+        if reference_index >= self.reference_sample_count:
+            self._finish_run(FlightPhase.COMPLETED, "Completed the SITL reference window.")
             return
+
+        tick_dt_ms = 0.0 if self.last_active_tick_ns is None else (now_ns - self.last_active_tick_ns) / 1.0e6
+        self.last_active_tick_ns = now_ns
 
         state_raw = self.latest_state.copy()
         state_used = state_raw.copy()
@@ -224,9 +306,18 @@ class ControllerNode(Node):
             state_used = self._quantize_vector(state_used, "x_train_min", "x_train_max")
 
         lifted_state = lift_state(state_used, self.model.n_basis)
-        lifted_reference = self.reference_lifted[:, self.step_index : self.step_index + self.config.mpc.pred_horizon]
-        f_vector, g_matrix, a_ineq, b_ineq = get_qp(self.model, lifted_state, lifted_reference, self.config.mpc.pred_horizon, self.config.mpc)
+        lifted_reference = self._reference_window(reference_index)
+        solver_start = perf_counter()
+        f_vector, g_matrix, a_ineq, b_ineq = get_qp(
+            self.model,
+            lifted_state,
+            lifted_reference,
+            self.config.mpc.pred_horizon,
+            self.config.mpc,
+        )
         solution = solve_qp(f_vector, g_matrix, a_ineq, b_ineq)
+        solver_ms = (perf_counter() - solver_start) * 1000.0
+
         control_raw = solution[:4]
         control_used = control_raw.copy()
         if self.config.quantization_mode in {"control", "both"} and self.metadata:
@@ -250,11 +341,15 @@ class ControllerNode(Node):
             if rclpy.ok():
                 raise
 
-        reference_row = self.reference_physical[:, self.step_index]
+        reference_row = self.reference_physical[:, reference_index]
         self._log_writer.writerow(
             [
                 self.step_index,
-                self.get_clock().now().nanoseconds,
+                now_ns,
+                experiment_time_s,
+                reference_index,
+                tick_dt_ms,
+                solver_ms,
                 *state_raw.tolist(),
                 *state_used.tolist(),
                 *control_raw.tolist(),

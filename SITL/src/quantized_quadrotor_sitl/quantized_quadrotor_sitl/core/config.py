@@ -68,7 +68,7 @@ class VehicleScalingConfig:
 
 @dataclass(slots=True)
 class RuntimeConfig:
-    control_rate_hz: float = 1000.0
+    control_rate_hz: float = 100.0
     offboard_warmup_cycles: int = 10
     arm_retry_cycles: int = 500
     force_arm_in_sitl: bool = True
@@ -76,6 +76,7 @@ class RuntimeConfig:
     model_artifact: str = "results/offline/paper_v2/latest/edmd_unquantized.npz"
     quantization_mode: str = "none"
     quantized_word_length: int = 12
+    reference_mode: str = "hover_step"
     reference_seed: int = 2141444
     reference_duration_s: float = 10.0
     state_topic: str = "/quantized_mpc/state18"
