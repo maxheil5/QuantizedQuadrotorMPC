@@ -53,3 +53,14 @@ def test_px4_wrench_adapter_clamps_collective_to_nonnegative():
 
     npt.assert_allclose(thrust_body, np.array([0.0, 0.0, 0.0]))
     npt.assert_allclose(normalized_moments, np.array([0.125, 0.0625, -0.04]))
+
+
+def test_px4_wrench_adapter_maps_positive_collective_to_positive_body_z():
+    thrust_body, normalized_moments = physical_control_to_px4_wrench(
+        np.array([40.0, -0.5, 0.25, -0.1], dtype=float),
+        max_collective_thrust_newton=80.0,
+        max_body_torque_nm=np.array([4.0, 4.0, 2.5], dtype=float),
+    )
+
+    npt.assert_allclose(thrust_body, np.array([0.0, 0.0, 0.5]))
+    npt.assert_allclose(normalized_moments, np.array([-0.125, -0.0625, 0.04]))
