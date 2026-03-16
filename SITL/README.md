@@ -80,7 +80,7 @@ The runtime no longer launches the stock `gz_x500` target directly. It first gen
 
 The telemetry adapter accepts PX4 `VehicleOdometry` when it is available, but the SITL runtime also reconstructs the MATLAB state from the estimator topics `VehicleLocalPosition`, `VehicleAttitude`, and `VehicleAngularVelocity`. This matches the PX4 topic set that is actually present on the Ubuntu 22.04 target machine.
 
-The controller does not start the experiment timeline until PX4 reports that the vehicle is armed. In the default SITL runtime config, the arming command uses PX4's standard MAVLink force-arm code so the experiment can run without a manual QGroundControl step on localhost.
+The controller does not start the experiment timeline until PX4 reports that the vehicle is armed. The default launcher now also starts a lightweight localhost MAVLink GCS heartbeat helper so PX4 clears the default "No connection to the ground control station" arming gate without requiring a separate QGroundControl session.
 
 After setup and after generating an offline model artifact, start the SITL stack with:
 

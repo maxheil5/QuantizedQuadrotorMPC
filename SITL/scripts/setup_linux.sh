@@ -80,6 +80,7 @@ python -m pip install \
   "scipy==1.10.1" \
   matplotlib \
   pandas \
+  pymavlink \
   pyyaml \
   osqp \
   pytest \

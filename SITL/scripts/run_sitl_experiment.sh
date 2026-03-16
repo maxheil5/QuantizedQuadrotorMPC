@@ -10,6 +10,9 @@ WORLD_FILE="${PX4_GZ_WORLD_FILE:-}"
 WORLD_NAME="${PX4_GZ_WORLD:-default}"
 SIM_MODEL_NAME="${PX4_SIM_MODEL:-gz_quantized_koopman_quad}"
 HEADLESS="${HEADLESS:-0}"
+GCS_HEARTBEAT_HOST="${GCS_HEARTBEAT_HOST:-127.0.0.1}"
+GCS_HEARTBEAT_PORT="${GCS_HEARTBEAT_PORT:-18570}"
+GCS_HEARTBEAT_RATE_HZ="${GCS_HEARTBEAT_RATE_HZ:-1.0}"
 GZ_MODELS_DIR="${ROOT_DIR}/artifacts/generated/gazebo_models"
 GZ_WORLDS_DIR="${ROOT_DIR}/configs/gazebo/worlds"
 PX4_BUNDLED_MODELS_DIR="${PX4_DIR}/Tools/simulation/gz/models"
@@ -43,6 +46,12 @@ if [[ ! -d "${PX4_DIR}" ]]; then
   exit 1
 fi
 
+if ! python -c "import pymavlink" >/dev/null 2>&1; then
+  echo "pymavlink is missing in the active Python environment." >&2
+  echo "Install it with: python -m pip install pymavlink" >&2
+  exit 1
+fi
+
 if [[ -n "${WORLD_FILE}" && ! -f "${WORLD_FILE}" ]]; then
   echo "Gazebo world file is missing: ${WORLD_FILE}" >&2
   exit 1
@@ -60,6 +69,7 @@ AGENT_PID=$!
 
 cleanup() {
   kill "${AGENT_PID}" >/dev/null 2>&1 || true
+  kill "${GCS_HEARTBEAT_PID:-0}" >/dev/null 2>&1 || true
   kill "${PX4_PID:-0}" >/dev/null 2>&1 || true
   kill "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
   kill "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
@@ -84,6 +94,12 @@ env \
   ./build/px4_sitl_default/bin/px4 &
 PX4_PID=$!
 popd >/dev/null
+
+python -m quantized_quadrotor_sitl.tools.gcs_heartbeat \
+  --host "${GCS_HEARTBEAT_HOST}" \
+  --port "${GCS_HEARTBEAT_PORT}" \
+  --rate-hz "${GCS_HEARTBEAT_RATE_HZ}" &
+GCS_HEARTBEAT_PID=$!
 
 python -m quantized_quadrotor_sitl.ros.telemetry_adapter_node --ros-args -p config_path:="${CONFIG_PATH}" &
 TELEMETRY_PID=$!

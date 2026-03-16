@@ -14,7 +14,10 @@ setup(
         (f"share/{package_name}/launch", ["launch/quantized_quadrotor_sitl.launch.py"]),
         (f"share/{package_name}/config", ["config/runtime.yaml"]),
     ],
-    install_requires=["setuptools"],
+    install_requires=[
+        "setuptools",
+        "pymavlink",
+    ],
     zip_safe=False,
     maintainer="Max",
     maintainer_email="max@example.com",
@@ -25,7 +28,7 @@ setup(
             "offline_parity = quantized_quadrotor_sitl.experiments.offline_parity:main",
             "telemetry_adapter_node = quantized_quadrotor_sitl.ros.telemetry_adapter_node:main",
             "controller_node = quantized_quadrotor_sitl.ros.controller_node:main",
+            "gcs_heartbeat = quantized_quadrotor_sitl.tools.gcs_heartbeat:main",
         ],
     },
 )
-

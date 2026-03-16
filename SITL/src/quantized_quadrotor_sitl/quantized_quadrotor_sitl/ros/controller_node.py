@@ -146,14 +146,22 @@ class ControllerNode(Node):
         msg.source_system = 1
         msg.source_component = 1
         msg.from_external = True
-        self.vehicle_command_publisher.publish(msg)
+        try:
+            self.vehicle_command_publisher.publish(msg)
+        except Exception:
+            if rclpy.ok():
+                raise
 
     def _publish_offboard_mode(self) -> None:
         if not rclpy.ok():
             return
-        self.offboard_control_mode_publisher.publish(
-            offboard_control_mode_msg(OffboardControlMode, self._timestamp_us())
-        )
+        try:
+            self.offboard_control_mode_publisher.publish(
+                offboard_control_mode_msg(OffboardControlMode, self._timestamp_us())
+            )
+        except Exception:
+            if rclpy.ok():
+                raise
 
     def _request_offboard_arm(self) -> None:
         self._publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
@@ -176,12 +184,20 @@ class ControllerNode(Node):
         thrust_msg = VehicleThrustSetpoint()
         thrust_msg.timestamp = self._timestamp_us()
         thrust_msg.xyz = thrust_body.tolist()
-        self.vehicle_thrust_publisher.publish(thrust_msg)
+        try:
+            self.vehicle_thrust_publisher.publish(thrust_msg)
+        except Exception:
+            if rclpy.ok():
+                raise
 
         torque_msg = VehicleTorqueSetpoint()
         torque_msg.timestamp = self._timestamp_us()
         torque_msg.xyz = normalized_moments.tolist()
-        self.vehicle_torque_publisher.publish(torque_msg)
+        try:
+            self.vehicle_torque_publisher.publish(torque_msg)
+        except Exception:
+            if rclpy.ok():
+                raise
 
     def _control_tick(self) -> None:
         self._publish_offboard_mode()
@@ -220,11 +236,19 @@ class ControllerNode(Node):
 
         state_debug = Float64MultiArray()
         state_debug.data = state_used.tolist()
-        self.state_debug_publisher.publish(state_debug)
+        try:
+            self.state_debug_publisher.publish(state_debug)
+        except Exception:
+            if rclpy.ok():
+                raise
 
         control_debug = Float64MultiArray()
         control_debug.data = control_used.tolist()
-        self.control_debug_publisher.publish(control_debug)
+        try:
+            self.control_debug_publisher.publish(control_debug)
+        except Exception:
+            if rclpy.ok():
+                raise
 
         reference_row = self.reference_physical[:, self.step_index]
         self._log_writer.writerow(

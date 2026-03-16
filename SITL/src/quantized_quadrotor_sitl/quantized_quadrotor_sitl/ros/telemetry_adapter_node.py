@@ -104,7 +104,11 @@ class TelemetryAdapterNode(Node):
             return
         payload = Float64MultiArray()
         payload.data = state.tolist()
-        self.publisher.publish(payload)
+        try:
+            self.publisher.publish(payload)
+        except Exception:
+            if rclpy.ok():
+                raise
 
 
 def main() -> None:
