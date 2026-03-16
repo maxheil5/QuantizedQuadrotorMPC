@@ -24,6 +24,10 @@ fi
 
 export PYTHONNOUSERSITE=1
 export PYTHONPATH="${PACKAGE_ROOT}:${PYTHONPATH:-}"
+export GZ_TRANSPORT_LOCALHOST_ONLY="${GZ_TRANSPORT_LOCALHOST_ONLY:-1}"
+export IGN_TRANSPORT_DISABLE_MULTICAST="${IGN_TRANSPORT_DISABLE_MULTICAST:-1}"
+export IGN_IP="${IGN_IP:-127.0.0.1}"
+export GZ_IP="${GZ_IP:-127.0.0.1}"
 source /opt/ros/humble/setup.bash
 if [[ -f "${ROOT_DIR}/install/setup.bash" ]]; then
   source "${ROOT_DIR}/install/setup.bash"

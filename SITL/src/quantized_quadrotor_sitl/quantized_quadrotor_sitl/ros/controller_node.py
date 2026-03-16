@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import rclpy
-from px4_msgs.msg import OffboardControlMode, VehicleCommand, VehicleThrustSetpoint, VehicleTorqueSetpoint
+from px4_msgs.msg import OffboardControlMode, VehicleCommand, VehicleStatus, VehicleThrustSetpoint, VehicleTorqueSetpoint
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -36,6 +36,7 @@ class ControllerNode(Node):
         self.reference_physical: np.ndarray | None = None
         self.step_index = 0
         self.warmup_cycles = 0
+        self.arm_retry_counter = 0
         self.armed = False
         px4_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -49,6 +50,12 @@ class ControllerNode(Node):
             self.config.state_topic,
             self._handle_state,
             10,
+        )
+        self.vehicle_status_subscription = self.create_subscription(
+            VehicleStatus,
+            self.config.vehicle_status_topic,
+            self._handle_vehicle_status,
+            px4_qos,
         )
         self.state_debug_publisher = self.create_publisher(Float64MultiArray, self.config.state_log_topic, 10)
         self.control_debug_publisher = self.create_publisher(Float64MultiArray, self.config.control_debug_topic, 10)
@@ -106,6 +113,9 @@ class ControllerNode(Node):
         if self.reference_lifted is None and self.latest_state.size == 18:
             self._initialize_reference(self.latest_state)
 
+    def _handle_vehicle_status(self, msg: VehicleStatus) -> None:
+        self.armed = msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
+
     def _initialize_reference(self, state0: np.ndarray) -> None:
         t_ref = np.arange(0.0, self.config.reference_duration_s + self.config.mpc.sim_timestep, self.config.mpc.sim_timestep)
         x_ref, _, _, _, _, _ = get_random_trajectories(state0, 1, t_ref, "mpc", self.rng)
@@ -124,6 +134,8 @@ class ControllerNode(Node):
         return quantized[:, 0]
 
     def _publish_vehicle_command(self, command: int, param1: float = 0.0, param2: float = 0.0) -> None:
+        if not rclpy.ok():
+            return
         msg = VehicleCommand()
         msg.timestamp = self._timestamp_us()
         msg.command = command
@@ -137,11 +149,24 @@ class ControllerNode(Node):
         self.vehicle_command_publisher.publish(msg)
 
     def _publish_offboard_mode(self) -> None:
+        if not rclpy.ok():
+            return
         self.offboard_control_mode_publisher.publish(
             offboard_control_mode_msg(OffboardControlMode, self._timestamp_us())
         )
 
+    def _request_offboard_arm(self) -> None:
+        self._publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
+        arm_param2 = self.config.force_arm_magic if self.config.force_arm_in_sitl else 0.0
+        self._publish_vehicle_command(
+            VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
+            param1=1.0,
+            param2=arm_param2,
+        )
+
     def _publish_wrench(self, control_used: np.ndarray) -> None:
+        if not rclpy.ok():
+            return
         thrust_body, normalized_moments = physical_control_to_px4_wrench(
             control_used,
             self.config.vehicle_scaling.max_collective_thrust_newton,
@@ -165,10 +190,13 @@ class ControllerNode(Node):
 
         if self.warmup_cycles < self.config.offboard_warmup_cycles:
             self.warmup_cycles += 1
-            if self.warmup_cycles == self.config.offboard_warmup_cycles:
-                self._publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
-                self._publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0)
-                self.armed = True
+            return
+
+        if not self.armed:
+            retry_cycles = max(1, self.config.arm_retry_cycles)
+            if self.arm_retry_counter % retry_cycles == 0:
+                self._request_offboard_arm()
+            self.arm_retry_counter += 1
             return
 
         if self.step_index + self.config.mpc.pred_horizon >= self.reference_lifted.shape[1]:

@@ -8,7 +8,7 @@
 4. `controller_node` loads an offline EDMD artifact produced by the parity runner.
 5. The controller optionally quantizes the telemetry path, the control path, both, or neither.
 6. The controller solves the lifted QP and publishes `VehicleThrustSetpoint` and `VehicleTorqueSetpoint`.
-7. The controller logs raw state, quantized state, raw control, quantized control, and the active reference trajectory.
+7. The controller retries offboard-mode and arm commands until PX4 reports `ARMING_STATE_ARMED`, then logs raw state, quantized state, raw control, quantized control, and the active reference trajectory.
 
 ## Quantization Injection
 
@@ -30,8 +30,8 @@
 ## Vehicle Model Overlay
 
 - The runtime no longer launches the stock `gz_x500` target directly.
-- `scripts/install_px4_gazebo_overlay.sh` generates `quantized_koopman_quad` by copying the PX4 x500 Gazebo model and patching the base-link mass and inertia with the MATLAB values from `get_params.m`. The generated model is mirrored into both `artifacts/generated/gazebo_models/` and `~/.simulation-gazebo/models/` so PX4's standalone Gazebo tooling can find it.
-- `scripts/run_sitl_experiment.sh` copies the custom world into `~/.simulation-gazebo/worlds/`, starts PX4's supported `simulation-gazebo` launcher for that world, and then starts PX4 with `PX4_SIM_MODEL=gz_quantized_koopman_quad`.
+- `scripts/install_px4_gazebo_overlay.sh` generates `quantized_koopman_quad` by copying the PX4 x500 Gazebo model and patching the base-link mass and inertia with the MATLAB values from `get_params.m`. The generated model is installed into `artifacts/generated/gazebo_models/`, `~/.simulation-gazebo/models/`, and PX4's own Gazebo model directory.
+- `scripts/run_sitl_experiment.sh` starts PX4 with `PX4_SIM_MODEL=gz_quantized_koopman_quad` through PX4's regular Gazebo SITL path rather than the earlier standalone-world wrapper.
 - This keeps the ROS/PX4/Gazebo wiring intact while removing the direct dependency on the unmodified stock vehicle model.
 
 ## Artifact Flow

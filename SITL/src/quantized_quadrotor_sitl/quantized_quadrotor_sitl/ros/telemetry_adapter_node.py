@@ -100,6 +100,8 @@ class TelemetryAdapterNode(Node):
         self._publish_state(state)
 
     def _publish_state(self, state: np.ndarray) -> None:
+        if not rclpy.ok():
+            return
         payload = Float64MultiArray()
         payload.data = state.tolist()
         self.publisher.publish(payload)

@@ -62,7 +62,8 @@ For a typical SITL experiment:
 
 1. Start the Micro XRCE-DDS Agent.
 2. Generate or refresh the local `quantized_koopman_quad` Gazebo model overlay.
-3. Start Gazebo Harmonic on the target world with `GZ_SIM_RESOURCE_PATH` including the generated model directory.
-4. Start PX4 SITL in standalone Gazebo mode with `PX4_SIM_MODEL=gz_quantized_koopman_quad`.
+3. Start PX4 SITL with `PX4_SIM_MODEL=gz_quantized_koopman_quad` through PX4's normal Gazebo launcher path.
+4. Let PX4 launch Gazebo Harmonic and the selected world.
 5. Source ROS 2 and the workspace install.
 6. Launch the telemetry adapter and controller.
+7. The controller keeps sending offboard heartbeats and retries the arm command until PX4 reports `ARMING_STATE_ARMED`; the default SITL config uses PX4's standard MAVLink force-arm code so QGroundControl is not required just to start a run.

@@ -1,5 +1,8 @@
 control_rate_hz: 1000.0
 offboard_warmup_cycles: 10
+arm_retry_cycles: 500
+force_arm_in_sitl: true
+force_arm_magic: 21196.0
 model_artifact: results/offline/paper_v2/latest/edmd_unquantized.npz
 quantization_mode: none
 quantized_word_length: 12
@@ -12,6 +15,7 @@ vehicle_odometry_topic: /fmu/out/vehicle_odometry
 vehicle_local_position_topic: /fmu/out/vehicle_local_position
 vehicle_attitude_topic: /fmu/out/vehicle_attitude
 vehicle_angular_velocity_topic: /fmu/out/vehicle_angular_velocity
+vehicle_status_topic: /fmu/out/vehicle_status_v1
 offboard_control_mode_topic: /fmu/in/offboard_control_mode
 vehicle_command_topic: /fmu/in/vehicle_command
 vehicle_thrust_setpoint_topic: /fmu/in/vehicle_thrust_setpoint

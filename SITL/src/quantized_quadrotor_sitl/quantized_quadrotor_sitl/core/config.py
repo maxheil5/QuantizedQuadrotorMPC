@@ -70,6 +70,9 @@ class VehicleScalingConfig:
 class RuntimeConfig:
     control_rate_hz: float = 1000.0
     offboard_warmup_cycles: int = 10
+    arm_retry_cycles: int = 500
+    force_arm_in_sitl: bool = True
+    force_arm_magic: float = 21196.0
     model_artifact: str = "results/offline/paper_v2/latest/edmd_unquantized.npz"
     quantization_mode: str = "none"
     quantized_word_length: int = 12
@@ -82,6 +85,7 @@ class RuntimeConfig:
     vehicle_local_position_topic: str = "/fmu/out/vehicle_local_position"
     vehicle_attitude_topic: str = "/fmu/out/vehicle_attitude"
     vehicle_angular_velocity_topic: str = "/fmu/out/vehicle_angular_velocity"
+    vehicle_status_topic: str = "/fmu/out/vehicle_status_v1"
     offboard_control_mode_topic: str = "/fmu/in/offboard_control_mode"
     vehicle_command_topic: str = "/fmu/in/vehicle_command"
     vehicle_thrust_setpoint_topic: str = "/fmu/in/vehicle_thrust_setpoint"
