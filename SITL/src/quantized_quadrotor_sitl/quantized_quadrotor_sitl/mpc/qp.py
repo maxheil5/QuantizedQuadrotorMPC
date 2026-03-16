@@ -19,6 +19,8 @@ def get_qp(
     lifted_reference: FloatArray,
     horizon: int,
     _: MPCConfig,
+    control_lower_bounds: FloatArray | None = None,
+    control_upper_bounds: FloatArray | None = None,
 ) -> tuple[FloatArray, FloatArray, sparse.csc_matrix, FloatArray]:
     a_matrix = model.A
     b_matrix = model.B
@@ -62,11 +64,22 @@ def get_qp(
                 col * n_input : (col + 1) * n_input,
             ] = block
 
-    a_ineq_i = np.kron(np.eye(4), np.array([[-1.0], [1.0]], dtype=float))
+    if control_lower_bounds is None:
+        control_lower_bounds = np.full(n_input, -50.0, dtype=float)
+    else:
+        control_lower_bounds = np.asarray(control_lower_bounds, dtype=float).reshape(n_input)
+
+    if control_upper_bounds is None:
+        control_upper_bounds = np.full(n_input, 50.0, dtype=float)
+    else:
+        control_upper_bounds = np.asarray(control_upper_bounds, dtype=float).reshape(n_input)
+
+    a_ineq_i = np.kron(np.eye(n_input), np.array([[-1.0], [1.0]], dtype=float))
     a_ineq = block_diag(*[a_ineq_i for _ in range(horizon)])
-    u_lb = -50.0
-    u_ub = 50.0
-    b_ineq_i = np.tile(np.array([-u_lb, u_ub], dtype=float), 4)
+    b_ineq_i = np.empty(2 * n_input, dtype=float)
+    for idx in range(n_input):
+        b_ineq_i[2 * idx] = -control_lower_bounds[idx]
+        b_ineq_i[2 * idx + 1] = control_upper_bounds[idx]
     b_ineq = np.concatenate([b_ineq_i for _ in range(horizon)])
 
     g_matrix = 2.0 * (r_hat + b_hat.T @ q_hat @ b_hat)
@@ -79,4 +92,3 @@ def get_qp(
         sparse.csc_matrix(a_ineq),
         b_ineq,
     )
-

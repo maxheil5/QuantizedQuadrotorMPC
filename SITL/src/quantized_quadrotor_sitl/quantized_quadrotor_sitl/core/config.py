@@ -65,6 +65,28 @@ class VehicleScalingConfig:
             dtype=float,
         )
 
+    def control_lower_bounds(self) -> FloatArray:
+        return np.array(
+            [
+                0.0,
+                -self.max_body_torque_x_nm,
+                -self.max_body_torque_y_nm,
+                -self.max_body_torque_z_nm,
+            ],
+            dtype=float,
+        )
+
+    def control_upper_bounds(self) -> FloatArray:
+        return np.array(
+            [
+                self.max_collective_thrust_newton,
+                self.max_body_torque_x_nm,
+                self.max_body_torque_y_nm,
+                self.max_body_torque_z_nm,
+            ],
+            dtype=float,
+        )
+
 
 @dataclass(slots=True)
 class RuntimeConfig:

@@ -314,6 +314,8 @@ class ControllerNode(Node):
             lifted_reference,
             self.config.mpc.pred_horizon,
             self.config.mpc,
+            self.config.vehicle_scaling.control_lower_bounds(),
+            self.config.vehicle_scaling.control_upper_bounds(),
         )
         solution = solve_qp(f_vector, g_matrix, a_ineq, b_ineq)
         solver_ms = (perf_counter() - solver_start) * 1000.0
