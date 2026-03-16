@@ -24,6 +24,7 @@ def test_runtime_config_includes_estimator_topic_defaults():
     assert config.force_arm_in_sitl is True
     assert config.force_arm_magic == 21196.0
     assert config.reference_mode == "hover_step"
+    assert config.vehicle_scaling.hover_thrust_bias_newton == 40.0
     assert config.vehicle_odometry_topic == "/fmu/out/vehicle_odometry"
     assert config.vehicle_local_position_topic == "/fmu/out/vehicle_local_position"
     assert config.vehicle_attitude_topic == "/fmu/out/vehicle_attitude"

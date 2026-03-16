@@ -108,6 +108,9 @@ class ControllerNode(Node):
                 "reference_index",
                 "tick_dt_ms",
                 "solver_ms",
+                "px4_collective_command_newton",
+                "px4_collective_normalized",
+                "px4_thrust_body_z",
                 *[f"state_raw_{idx}" for idx in range(18)],
                 *[f"state_used_{idx}" for idx in range(18)],
                 *[f"control_raw_{idx}" for idx in range(4)],
@@ -219,12 +222,13 @@ class ControllerNode(Node):
             self.get_logger().info(message)
         self.shutdown_requested = True
 
-    def _publish_wrench(self, control_used: np.ndarray) -> None:
+    def _publish_wrench(self, control_used: np.ndarray) -> tuple[float, float, float]:
         if not rclpy.ok():
-            return
-        thrust_body, normalized_moments = physical_control_to_px4_wrench(
+            return 0.0, 0.0, 0.0
+        thrust_body, normalized_moments, collective_command_newton, collective_normalized = physical_control_to_px4_wrench(
             control_used,
             self.config.vehicle_scaling.max_collective_thrust_newton,
+            self.config.vehicle_scaling.hover_thrust_bias_newton,
             self.config.vehicle_scaling.torque_scale(),
         )
 
@@ -245,6 +249,7 @@ class ControllerNode(Node):
         except Exception:
             if rclpy.ok():
                 raise
+        return collective_command_newton, collective_normalized, float(thrust_body[2])
 
     def _control_tick(self) -> None:
         if self.shutdown_requested:
@@ -325,7 +330,7 @@ class ControllerNode(Node):
         if self.config.quantization_mode in {"control", "both"} and self.metadata:
             control_used = self._quantize_vector(control_used, "u_train_min", "u_train_max")
 
-        self._publish_wrench(control_used)
+        px4_collective_command_newton, px4_collective_normalized, px4_thrust_body_z = self._publish_wrench(control_used)
 
         state_debug = Float64MultiArray()
         state_debug.data = state_used.tolist()
@@ -352,6 +357,9 @@ class ControllerNode(Node):
                 reference_index,
                 tick_dt_ms,
                 solver_ms,
+                px4_collective_command_newton,
+                px4_collective_normalized,
+                px4_thrust_body_z,
                 *state_raw.tolist(),
                 *state_used.tolist(),
                 *control_raw.tolist(),

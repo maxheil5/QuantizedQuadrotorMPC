@@ -24,6 +24,7 @@ vehicle_torque_setpoint_topic: /fmu/in/vehicle_torque_setpoint
 results_dir: results/sitl/latest
 vehicle_scaling:
   max_collective_thrust_newton: 80.0
+  hover_thrust_bias_newton: 40.0
   max_body_torque_x_nm: 4.0
   max_body_torque_y_nm: 4.0
   max_body_torque_z_nm: 2.5
