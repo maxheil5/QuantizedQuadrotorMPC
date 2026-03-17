@@ -80,6 +80,42 @@ def test_patch_model_sdf_scales_motor_constant_with_mass_ratio():
     assert "<motorConstant>1.85504286e-05</motorConstant>" in patched
 
 
+def test_patch_model_sdf_prefers_explicit_motor_constant_scale():
+    original = """
+    <sdf version="1.9">
+      <model name="x500">
+        <plugin filename="gz-sim-multicopter-motor-model-system" name="gz::sim::systems::MulticopterMotorModel">
+          <motorConstant>8.54858e-06</motorConstant>
+        </plugin>
+        <link name="base_link">
+          <inertial>
+            <mass>2.0</mass>
+            <inertia>
+              <ixx>1</ixx>
+              <iyy>1</iyy>
+              <izz>1</izz>
+            </inertia>
+          </inertial>
+        </link>
+      </model>
+    </sdf>
+    """
+    config = GazeboOverlayConfig(
+        "x500",
+        "quantized_koopman_quad",
+        4.34,
+        0.082,
+        0.0845,
+        0.1377,
+        source_mass_kg=2.0,
+        motor_constant_scale=1.6,
+    )
+
+    patched = patch_model_sdf(original, config)
+
+    assert "<motorConstant>1.36777280e-05</motorConstant>" in patched
+
+
 def test_install_overlay_patches_merged_base_model(tmp_path):
     source_root = tmp_path / "models"
     x500_dir = source_root / "x500"
@@ -217,12 +253,13 @@ def test_install_overlay_scales_top_level_motor_plugins(tmp_path):
         0.0845,
         0.1377,
         source_mass_kg=2.0,
+        motor_constant_scale=1.6,
     )
     install_overlay(x500_dir, destination_root, config)
 
     top_level_sdf = (destination_root / "quantized_koopman_quad" / "model.sdf").read_text(encoding="utf-8")
-    assert "<motorConstant>1.85504286e-05</motorConstant>" in top_level_sdf
+    assert "<motorConstant>1.36777280e-05</motorConstant>" in top_level_sdf
 
     metadata = (destination_root / "quantized_koopman_quad" / "QUANTIZED_KOOPMAN_MODEL.txt").read_text(encoding="utf-8")
     assert "source_mass_kg=2.0" in metadata
-    assert "motor_constant_scale=2.17" in metadata
+    assert "motor_constant_scale=1.6" in metadata

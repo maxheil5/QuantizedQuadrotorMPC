@@ -17,6 +17,7 @@ class GazeboOverlayConfig:
     iyy: float
     izz: float
     source_mass_kg: float | None = None
+    motor_constant_scale: float | None = None
 
 
 def load_overlay_config(path: Path) -> GazeboOverlayConfig:
@@ -31,6 +32,9 @@ def load_overlay_config(path: Path) -> GazeboOverlayConfig:
         iyy=float(inertia["iyy"]),
         izz=float(inertia["izz"]),
         source_mass_kg=None if payload.get("source_mass_kg") is None else float(payload["source_mass_kg"]),
+        motor_constant_scale=None
+        if payload.get("motor_constant_scale") is None
+        else float(payload["motor_constant_scale"]),
     )
 
 
@@ -73,6 +77,8 @@ def _apply_inertial_override(base_link: ET.Element, config: GazeboOverlayConfig)
 
 
 def _motor_constant_scale(config: GazeboOverlayConfig) -> float:
+    if config.motor_constant_scale is not None:
+        return config.motor_constant_scale
     if config.source_mass_kg is None or config.source_mass_kg <= 0.0:
         return 1.0
     return config.mass_kg / config.source_mass_kg
@@ -207,6 +213,7 @@ def install_overlay(source_model_dir: Path, destination_root: Path, config: Gaze
             iyy=config.iyy,
             izz=config.izz,
             source_mass_kg=config.source_mass_kg,
+            motor_constant_scale=config.motor_constant_scale,
         )
         install_overlay(include_source_dir, destination_root, include_config)
 
