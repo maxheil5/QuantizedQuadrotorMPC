@@ -72,3 +72,32 @@ def test_px4_wrench_adapter_applies_hover_bias_before_normalizing():
     npt.assert_allclose(normalized_moments, np.array([-0.125, -0.0625, 0.04]))
     assert collective_command_newton == 40.0
     assert collective_normalized == 0.5
+
+
+def test_qp_uses_configured_control_weights_in_hessian():
+    lifted_state = np.zeros(24, dtype=float)
+    lifted_state[6:15] = np.eye(3, dtype=float).reshape(-1, order="F")
+    lifted_reference = np.zeros((24, 1), dtype=float)
+    lifted_reference[6:15, 0] = np.eye(3, dtype=float).reshape(-1, order="F")
+
+    model = EDMDModel(
+        A=np.eye(24, dtype=float),
+        B=np.zeros((24, 4), dtype=float),
+        C=np.eye(24, dtype=float),
+        Z1=np.zeros((24, 1), dtype=float),
+        Z2=np.zeros((24, 1), dtype=float),
+        n_basis=3,
+    )
+    config = MPCConfig(control_weights_diag=[0.25, 2.0, 3.0, 4.0])
+
+    _, g_matrix, _, _ = get_qp(
+        model,
+        lifted_state,
+        lifted_reference,
+        1,
+        config,
+        np.array([-1.0, -1.0, -1.0, -1.0], dtype=float),
+        np.array([1.0, 1.0, 1.0, 1.0], dtype=float),
+    )
+
+    npt.assert_allclose(np.diag(g_matrix), np.array([0.5, 4.0, 6.0, 8.0]))

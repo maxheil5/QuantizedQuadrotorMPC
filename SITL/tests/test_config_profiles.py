@@ -27,6 +27,11 @@ def test_runtime_config_includes_estimator_topic_defaults():
     assert config.vehicle_scaling.hover_thrust_bias_newton == 40.0
     assert config.mpc.pred_horizon == 10
     assert config.mpc.sim_timestep == 1.0e-3
+    assert config.mpc.position_error_weights_diag == [500.0, 500.0, 20000.0]
+    assert config.mpc.velocity_error_weights_diag == [50.0, 50.0, 500.0]
+    assert config.mpc.attitude_error_weight == 100.0
+    assert config.mpc.angular_velocity_error_weight == 500.0
+    assert config.mpc.control_weights_diag == [1.0e-6, 12.0, 12.0, 30.0]
     assert config.vehicle_odometry_topic == "/fmu/out/vehicle_odometry"
     assert config.vehicle_local_position_topic == "/fmu/out/vehicle_local_position"
     assert config.vehicle_attitude_topic == "/fmu/out/vehicle_attitude"

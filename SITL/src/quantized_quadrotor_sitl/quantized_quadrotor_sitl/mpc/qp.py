@@ -18,7 +18,7 @@ def get_qp(
     lifted_state: FloatArray,
     lifted_reference: FloatArray,
     horizon: int,
-    _: MPCConfig,
+    config: MPCConfig,
     control_lower_bounds: FloatArray | None = None,
     control_upper_bounds: FloatArray | None = None,
 ) -> tuple[FloatArray, FloatArray, sparse.csc_matrix, FloatArray]:
@@ -36,14 +36,14 @@ def get_qp(
     wb_hat = decoded[15:24].reshape(3, 3, order="F")
     _ = vee_map(wb_hat.T)
 
-    qx = np.diag([1.0e4, 1.0e4, 1.0e2])
-    qv = np.diag([1.0e2, 1.0e2, 1.0e2])
-    qa = 1.0e2 * np.eye(9)
-    qw = 1.0e2 * np.eye(9)
+    qx = np.diag(config.position_error_weights())
+    qv = np.diag(config.velocity_error_weights())
+    qa = float(config.attitude_error_weight) * np.eye(9)
+    qw = float(config.angular_velocity_error_weight) * np.eye(9)
     q_i = np.zeros((lifted_state.shape[0], lifted_state.shape[0]), dtype=float)
     q_i[:24, :24] = block_diag(qx, qv, qa, qw)
     p_terminal = q_i.copy()
-    r_i = np.diag([1.0e-6, 1.0, 1.0, 1.0])
+    r_i = np.diag(config.control_weights())
 
     a_hat = np.zeros((n_state * horizon, n_state), dtype=float)
     for step in range(horizon):

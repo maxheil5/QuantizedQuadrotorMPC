@@ -18,10 +18,24 @@ class MPCConfig:
     sim_timestep: float = 1.0e-3
     sim_duration: float = 1.2
     use_casadi: bool = False
+    position_error_weights_diag: list[float] = field(default_factory=lambda: [1.0e4, 1.0e4, 1.0e2])
+    velocity_error_weights_diag: list[float] = field(default_factory=lambda: [1.0e2, 1.0e2, 1.0e2])
+    attitude_error_weight: float = 1.0e2
+    angular_velocity_error_weight: float = 1.0e2
+    control_weights_diag: list[float] = field(default_factory=lambda: [1.0e-6, 1.0, 1.0, 1.0])
 
     @property
     def max_iter(self) -> int:
         return int(np.floor(self.sim_duration / self.sim_timestep))
+
+    def position_error_weights(self) -> FloatArray:
+        return np.asarray(self.position_error_weights_diag, dtype=float).reshape(3)
+
+    def velocity_error_weights(self) -> FloatArray:
+        return np.asarray(self.velocity_error_weights_diag, dtype=float).reshape(3)
+
+    def control_weights(self) -> FloatArray:
+        return np.asarray(self.control_weights_diag, dtype=float).reshape(4)
 
 
 @dataclass(slots=True)
