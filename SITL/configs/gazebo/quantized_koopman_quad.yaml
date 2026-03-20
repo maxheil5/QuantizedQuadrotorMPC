@@ -1,7 +1,7 @@
 source_model_name: x500
 target_model_name: quantized_koopman_quad
 source_mass_kg: 2.0
-motor_constant_scale: 1.6
+motor_constant_scale: 1.8
 mass_kg: 4.34
 inertia:
   ixx: 0.0820
