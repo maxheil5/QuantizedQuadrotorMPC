@@ -65,7 +65,6 @@ class OfflineExperimentConfig:
 @dataclass(slots=True)
 class VehicleScalingConfig:
     max_collective_thrust_newton: float = 80.0
-    hover_thrust_bias_newton: float = 40.0
     max_body_torque_x_nm: float = 4.0
     max_body_torque_y_nm: float = 4.0
     max_body_torque_z_nm: float = 2.5
@@ -83,7 +82,7 @@ class VehicleScalingConfig:
     def control_lower_bounds(self) -> FloatArray:
         return np.array(
             [
-                -self.hover_thrust_bias_newton,
+                0.0,
                 -self.max_body_torque_x_nm,
                 -self.max_body_torque_y_nm,
                 -self.max_body_torque_z_nm,
@@ -94,7 +93,7 @@ class VehicleScalingConfig:
     def control_upper_bounds(self) -> FloatArray:
         return np.array(
             [
-                self.max_collective_thrust_newton - self.hover_thrust_bias_newton,
+                self.max_collective_thrust_newton,
                 self.max_body_torque_x_nm,
                 self.max_body_torque_y_nm,
                 self.max_body_torque_z_nm,
@@ -102,19 +101,19 @@ class VehicleScalingConfig:
             dtype=float,
         )
 
-    def collective_command_newton(self, collective_delta_newton: float) -> float:
+    def collective_command_newton(self, collective_newton: float) -> float:
         return float(
             np.clip(
-                collective_delta_newton + self.hover_thrust_bias_newton,
+                collective_newton,
                 0.0,
                 self.max_collective_thrust_newton,
             )
         )
 
-    def collective_command_normalized(self, collective_delta_newton: float) -> float:
+    def collective_command_normalized(self, collective_newton: float) -> float:
         if self.max_collective_thrust_newton <= 0.0:
             return 0.0
-        return self.collective_command_newton(collective_delta_newton) / self.max_collective_thrust_newton
+        return self.collective_command_newton(collective_newton) / self.max_collective_thrust_newton
 
 
 @dataclass(slots=True)

@@ -228,7 +228,6 @@ class ControllerNode(Node):
         thrust_body, normalized_moments, collective_command_newton, collective_normalized = physical_control_to_px4_wrench(
             control_used,
             self.config.vehicle_scaling.max_collective_thrust_newton,
-            self.config.vehicle_scaling.hover_thrust_bias_newton,
             self.config.vehicle_scaling.torque_scale(),
         )
 

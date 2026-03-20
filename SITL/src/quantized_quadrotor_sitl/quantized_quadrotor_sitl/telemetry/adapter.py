@@ -50,13 +50,11 @@ def vehicle_odometry_to_state18(
 def physical_control_to_px4_wrench(
     control_flu: np.ndarray,
     max_collective_thrust_newton: float,
-    hover_thrust_bias_newton: float,
     max_body_torque_nm: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, float, float]:
     control = np.asarray(control_flu, dtype=float).reshape(4)
-    # The MPC collective channel is treated as a delta around hover thrust in SITL.
     collective_command_newton = np.clip(
-        control[0] + hover_thrust_bias_newton,
+        control[0],
         0.0,
         max_collective_thrust_newton,
     )

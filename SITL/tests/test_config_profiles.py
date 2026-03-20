@@ -24,7 +24,7 @@ def test_runtime_config_includes_estimator_topic_defaults():
     assert config.force_arm_in_sitl is True
     assert config.force_arm_magic == 21196.0
     assert config.reference_mode == "takeoff_hold"
-    assert config.vehicle_scaling.hover_thrust_bias_newton == 40.0
+    assert config.vehicle_scaling.max_collective_thrust_newton == 80.0
     assert config.vehicle_scaling.max_body_torque_x_nm == 1.0
     assert config.vehicle_scaling.max_body_torque_y_nm == 1.0
     assert config.vehicle_scaling.max_body_torque_z_nm == 0.6

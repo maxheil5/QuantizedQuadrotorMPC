@@ -9,12 +9,12 @@ from quantized_quadrotor_sitl.mpc.qp import get_qp
 from quantized_quadrotor_sitl.telemetry.adapter import physical_control_to_px4_wrench
 
 
-def test_vehicle_scaling_exposes_hover_centered_control_bounds():
+def test_vehicle_scaling_exposes_absolute_collective_control_bounds():
     scaling = VehicleScalingConfig()
-    npt.assert_allclose(scaling.control_lower_bounds(), np.array([-40.0, -4.0, -4.0, -2.5]))
-    npt.assert_allclose(scaling.control_upper_bounds(), np.array([40.0, 4.0, 4.0, 2.5]))
-    assert scaling.collective_command_newton(0.0) == 40.0
-    assert scaling.collective_command_normalized(0.0) == 0.5
+    npt.assert_allclose(scaling.control_lower_bounds(), np.array([0.0, -4.0, -4.0, -2.5]))
+    npt.assert_allclose(scaling.control_upper_bounds(), np.array([80.0, 4.0, 4.0, 2.5]))
+    assert scaling.collective_command_newton(40.0) == 40.0
+    assert scaling.collective_command_normalized(40.0) == 0.5
 
 
 def test_qp_uses_asymmetric_collective_bounds_for_sitl():
@@ -43,14 +43,13 @@ def test_qp_uses_asymmetric_collective_bounds_for_sitl():
         scaling.control_upper_bounds(),
     )
 
-    npt.assert_allclose(b_ineq, np.array([40.0, 40.0, 4.0, 4.0, 4.0, 4.0, 2.5, 2.5]))
+    npt.assert_allclose(b_ineq, np.array([0.0, 80.0, 4.0, 4.0, 4.0, 4.0, 2.5, 2.5]))
 
 
-def test_px4_wrench_adapter_clamps_collective_after_hover_bias():
+def test_px4_wrench_adapter_clamps_negative_collective_command():
     thrust_body, normalized_moments, collective_command_newton, collective_normalized = physical_control_to_px4_wrench(
         np.array([-50.0, 0.5, -0.25, 0.1], dtype=float),
         max_collective_thrust_newton=80.0,
-        hover_thrust_bias_newton=40.0,
         max_body_torque_nm=np.array([4.0, 4.0, 2.5], dtype=float),
     )
 
@@ -60,11 +59,10 @@ def test_px4_wrench_adapter_clamps_collective_after_hover_bias():
     assert collective_normalized == 0.0
 
 
-def test_px4_wrench_adapter_applies_hover_bias_before_normalizing():
+def test_px4_wrench_adapter_normalizes_absolute_collective_command():
     thrust_body, normalized_moments, collective_command_newton, collective_normalized = physical_control_to_px4_wrench(
-        np.array([0.0, -0.5, 0.25, -0.1], dtype=float),
+        np.array([40.0, -0.5, 0.25, -0.1], dtype=float),
         max_collective_thrust_newton=80.0,
-        hover_thrust_bias_newton=40.0,
         max_body_torque_nm=np.array([4.0, 4.0, 2.5], dtype=float),
     )
 
