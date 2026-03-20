@@ -44,6 +44,35 @@ def build_hover_step_reference(
     return reference
 
 
+def build_takeoff_hold_reference(
+    initial_state: np.ndarray,
+    reference_duration_s: float,
+    sim_timestep: float,
+) -> np.ndarray:
+    state0 = np.asarray(initial_state, dtype=float).reshape(18)
+    sample_count = _reference_sample_count(reference_duration_s, sim_timestep)
+    sample_times = np.arange(sample_count, dtype=float) * sim_timestep
+
+    reference = np.repeat(state0[:, None], sample_count, axis=1)
+    reference[3:6, :] = 0.0
+    reference[15:18, :] = 0.0
+
+    position = np.repeat(state0[0:3, None], sample_count, axis=1)
+    x0, y0, z0 = state0[0:3]
+
+    for idx, t_val in enumerate(sample_times):
+        if t_val < 1.0:
+            position[:, idx] = [x0, y0, z0]
+        elif t_val < 3.0:
+            alpha = (t_val - 1.0) / 2.0
+            position[:, idx] = [x0, y0, z0 + 0.75 * alpha]
+        else:
+            position[:, idx] = [x0, y0, z0 + 0.75]
+
+    reference[0:3, :] = position
+    return reference
+
+
 def build_paper_random_reference(
     initial_state: np.ndarray,
     reference_duration_s: float,
@@ -63,6 +92,8 @@ def build_runtime_reference(
     sim_timestep: float,
     rng: np.random.Generator,
 ) -> np.ndarray:
+    if reference_mode == "takeoff_hold":
+        return build_takeoff_hold_reference(initial_state, reference_duration_s, sim_timestep)
     if reference_mode == "hover_step":
         return build_hover_step_reference(initial_state, reference_duration_s, sim_timestep)
     if reference_mode == "paper_random":

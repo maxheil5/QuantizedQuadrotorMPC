@@ -13,7 +13,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float64MultiArray
 
-from ..core.artifacts import load_edmd_artifact
+from ..core.artifacts import coarsen_edmd_model, load_edmd_artifact
 from ..core.config import RuntimeConfig, load_runtime_config
 from ..edmd.basis import lift_state
 from ..experiments.runtime_reference import build_runtime_reference
@@ -41,6 +41,7 @@ class ControllerNode(Node):
         config_path = self.declare_parameter("config_path", "configs/sitl_runtime.yaml").value
         self.config: RuntimeConfig = load_runtime_config(self._resolve_path(config_path))
         self.model, self.metadata = load_edmd_artifact(self._resolve_path(self.config.model_artifact))
+        self.runtime_model = coarsen_edmd_model(self.model, self.config.mpc.runtime_step_multiple())
         self.rng = np.random.default_rng(self.config.reference_seed)
         self.latest_state: np.ndarray | None = None
         self.reference_lifted: np.ndarray | None = None
@@ -144,12 +145,12 @@ class ControllerNode(Node):
             state0,
             self.config.reference_mode,
             self.config.reference_duration_s,
-            self.config.mpc.sim_timestep,
+            self.config.mpc.effective_timestep,
             self.rng,
         )
         self.reference_sample_count = self.reference_physical.shape[1]
         self.reference_lifted = np.column_stack(
-            [lift_state(self.reference_physical[:, idx], self.model.n_basis) for idx in range(self.reference_physical.shape[1])]
+            [lift_state(self.reference_physical[:, idx], self.runtime_model.n_basis) for idx in range(self.reference_physical.shape[1])]
         )
 
     def _reference_window(self, reference_index: int) -> np.ndarray:
@@ -297,7 +298,7 @@ class ControllerNode(Node):
             self.experiment_start_ns = now_ns
 
         experiment_time_s = max(0.0, (now_ns - self.experiment_start_ns) / 1.0e9)
-        reference_index = int(np.floor(experiment_time_s / self.config.mpc.sim_timestep + 1.0e-9))
+        reference_index = int(np.floor(experiment_time_s / self.config.mpc.effective_timestep + 1.0e-9))
         if reference_index >= self.reference_sample_count:
             self._finish_run(FlightPhase.COMPLETED, "Completed the SITL reference window.")
             return
@@ -310,11 +311,11 @@ class ControllerNode(Node):
         if self.config.quantization_mode in {"state", "both"} and self.metadata:
             state_used = self._quantize_vector(state_used, "x_train_min", "x_train_max")
 
-        lifted_state = lift_state(state_used, self.model.n_basis)
+        lifted_state = lift_state(state_used, self.runtime_model.n_basis)
         lifted_reference = self._reference_window(reference_index)
         solver_start = perf_counter()
         f_vector, g_matrix, a_ineq, b_ineq = get_qp(
-            self.model,
+            self.runtime_model,
             lifted_state,
             lifted_reference,
             self.config.mpc.pred_horizon,
