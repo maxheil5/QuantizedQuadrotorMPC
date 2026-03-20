@@ -68,13 +68,28 @@ export GZ_SIM_RESOURCE_PATH="${LOCAL_CACHE_MODELS_DIR}:${GZ_MODELS_DIR}:${GZ_WOR
 AGENT_PID=$!
 
 cleanup() {
-  kill "${AGENT_PID}" >/dev/null 2>&1 || true
-  kill "${GCS_HEARTBEAT_PID:-0}" >/dev/null 2>&1 || true
-  kill "${PX4_PID:-0}" >/dev/null 2>&1 || true
-  kill "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
+  trap - EXIT INT TERM
   kill "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
+  kill "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
+  kill "${PX4_PID:-0}" >/dev/null 2>&1 || true
+  kill "${GCS_HEARTBEAT_PID:-0}" >/dev/null 2>&1 || true
+  kill "${AGENT_PID:-0}" >/dev/null 2>&1 || true
+  wait "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
+  wait "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
+  wait "${PX4_PID:-0}" >/dev/null 2>&1 || true
+  wait "${GCS_HEARTBEAT_PID:-0}" >/dev/null 2>&1 || true
+  wait "${AGENT_PID:-0}" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
+
+require_running() {
+  local pid="$1"
+  local label="$2"
+  if ! kill -0 "${pid}" >/dev/null 2>&1; then
+    echo "${label} failed to start or exited immediately." >&2
+    exit 1
+  fi
+}
 
 if [[ ! -x "${PX4_DIR}/build/px4_sitl_default/bin/px4" ]]; then
   pushd "${PX4_DIR}" >/dev/null
@@ -86,6 +101,14 @@ if [[ "${HEADLESS}" == "1" ]]; then
   echo "HEADLESS=1 is not wired for the default PX4 launcher path." >&2
 fi
 
+python -u -m quantized_quadrotor_sitl.tools.gcs_heartbeat \
+  --host "${GCS_HEARTBEAT_HOST}" \
+  --port "${GCS_HEARTBEAT_PORT}" \
+  --rate-hz "${GCS_HEARTBEAT_RATE_HZ}" &
+GCS_HEARTBEAT_PID=$!
+sleep 1
+require_running "${GCS_HEARTBEAT_PID}" "GCS heartbeat helper"
+
 pushd "${PX4_DIR}" >/dev/null
 env \
   PX4_SYS_AUTOSTART="${PX4_SYS_AUTOSTART:-4001}" \
@@ -94,12 +117,6 @@ env \
   ./build/px4_sitl_default/bin/px4 &
 PX4_PID=$!
 popd >/dev/null
-
-python -m quantized_quadrotor_sitl.tools.gcs_heartbeat \
-  --host "${GCS_HEARTBEAT_HOST}" \
-  --port "${GCS_HEARTBEAT_PORT}" \
-  --rate-hz "${GCS_HEARTBEAT_RATE_HZ}" &
-GCS_HEARTBEAT_PID=$!
 
 python -m quantized_quadrotor_sitl.ros.telemetry_adapter_node --ros-args -p config_path:="${CONFIG_PATH}" &
 TELEMETRY_PID=$!

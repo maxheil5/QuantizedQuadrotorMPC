@@ -30,6 +30,10 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
 
     heartbeat_period = 1.0 / max(args.rate_hz, 1.0e-6)
+    print(
+        f"Starting GCS heartbeat helper on udpout:{args.host}:{args.port} at {args.rate_hz:.2f} Hz",
+        flush=True,
+    )
     connection = mavutil.mavlink_connection(
         f"udpout:{args.host}:{args.port}",
         source_system=255,
@@ -45,6 +49,8 @@ def main() -> None:
             mavutil.mavlink.MAV_STATE_ACTIVE,
         )
         time.sleep(heartbeat_period)
+
+    print("Stopping GCS heartbeat helper", flush=True)
 
 
 if __name__ == "__main__":
