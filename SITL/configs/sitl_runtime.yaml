@@ -1,4 +1,4 @@
-control_rate_hz: 50.0
+control_rate_hz: 100.0
 offboard_warmup_cycles: 10
 arm_retry_cycles: 500
 force_arm_in_sitl: true
@@ -29,8 +29,7 @@ vehicle_scaling:
   max_body_torque_y_nm: 2.0
   max_body_torque_z_nm: 1.2
 mpc:
-  pred_horizon: 15
+  pred_horizon: 10
   sim_timestep: 0.001
-  runtime_timestep: 0.02
   sim_duration: 1.2
   use_casadi: false

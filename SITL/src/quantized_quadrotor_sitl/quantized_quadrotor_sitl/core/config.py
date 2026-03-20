@@ -16,30 +16,12 @@ FloatArray = NDArray[np.float64]
 class MPCConfig:
     pred_horizon: int = 10
     sim_timestep: float = 1.0e-3
-    runtime_timestep: float | None = None
     sim_duration: float = 1.2
     use_casadi: bool = False
 
     @property
     def max_iter(self) -> int:
         return int(np.floor(self.sim_duration / self.sim_timestep))
-
-    @property
-    def effective_timestep(self) -> float:
-        return self.runtime_timestep if self.runtime_timestep is not None else self.sim_timestep
-
-    def runtime_step_multiple(self) -> int:
-        if self.sim_timestep <= 0.0:
-            raise ValueError("sim_timestep must be positive")
-        ratio = self.effective_timestep / self.sim_timestep
-        step_multiple = int(round(ratio))
-        if step_multiple < 1:
-            raise ValueError("runtime step multiple must be at least one")
-        if not np.isclose(ratio, step_multiple, rtol=1.0e-6, atol=1.0e-9):
-            raise ValueError(
-                "effective_timestep must be an integer multiple of sim_timestep for runtime model aggregation"
-            )
-        return step_multiple
 
 
 @dataclass(slots=True)

@@ -3,7 +3,6 @@ from __future__ import annotations
 import numpy as np
 import numpy.testing as npt
 
-from quantized_quadrotor_sitl.core.artifacts import coarsen_edmd_model
 from quantized_quadrotor_sitl.core.config import MPCConfig, VehicleScalingConfig
 from quantized_quadrotor_sitl.core.types import EDMDModel
 from quantized_quadrotor_sitl.mpc.qp import get_qp
@@ -73,22 +72,3 @@ def test_px4_wrench_adapter_applies_hover_bias_before_normalizing():
     npt.assert_allclose(normalized_moments, np.array([-0.125, -0.0625, 0.04]))
     assert collective_command_newton == 40.0
     assert collective_normalized == 0.5
-
-
-def test_mpc_runtime_step_multiple_and_model_coarsening_match_zero_order_hold():
-    config = MPCConfig(sim_timestep=1.0e-3, runtime_timestep=0.02)
-    assert config.runtime_step_multiple() == 20
-    assert config.effective_timestep == 0.02
-
-    model = EDMDModel(
-        A=np.array([[2.0]], dtype=float),
-        B=np.array([[3.0]], dtype=float),
-        C=np.array([[1.0]], dtype=float),
-        Z1=np.zeros((1, 1), dtype=float),
-        Z2=np.zeros((1, 1), dtype=float),
-        n_basis=0,
-    )
-    coarse = coarsen_edmd_model(model, step_multiple=3)
-    npt.assert_allclose(coarse.A, np.array([[8.0]], dtype=float))
-    npt.assert_allclose(coarse.B, np.array([[21.0]], dtype=float))
-    npt.assert_allclose(coarse.C, model.C)
