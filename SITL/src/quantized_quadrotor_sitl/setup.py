@@ -26,6 +26,7 @@ setup(
     entry_points={
         "console_scripts": [
             "offline_parity = quantized_quadrotor_sitl.experiments.offline_parity:main",
+            "offline_hover_local = quantized_quadrotor_sitl.experiments.offline_hover_local:main",
             "telemetry_adapter_node = quantized_quadrotor_sitl.ros.telemetry_adapter_node:main",
             "controller_node = quantized_quadrotor_sitl.ros.controller_node:main",
             "gcs_heartbeat = quantized_quadrotor_sitl.tools.gcs_heartbeat:main",

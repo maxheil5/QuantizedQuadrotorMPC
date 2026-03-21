@@ -21,22 +21,12 @@ def _control_covariance(flag: str) -> FloatArray:
     raise ValueError(f"unsupported trajectory flag: {flag}")
 
 
-def get_random_trajectories(
+def _simulate_constant_controls(
     initial_state: FloatArray,
-    n_control: int,
+    controls: FloatArray,
     t_traj: FloatArray,
-    flag: str,
-    rng: np.random.Generator,
 ) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray, FloatArray]:
     params = get_params()
-    net_weight = params.mass * params.g
-
-    controls = rng.multivariate_normal(
-        mean=np.zeros(4, dtype=float),
-        cov=_control_covariance(flag),
-        size=n_control,
-    )
-    controls[:, 0] += net_weight
 
     x_history: list[FloatArray] = []
     x1_history: list[FloatArray] = []
@@ -45,8 +35,7 @@ def get_random_trajectories(
     u1_history: list[FloatArray] = []
     u2_history: list[FloatArray] = []
 
-    for idx in range(n_control):
-        control = controls[idx, :]
+    for control in controls:
         solution = solve_ivp(
             lambda t, state: dynamics_srb(t, state, control, params),
             (float(t_traj[0]), float(t_traj[-1])),
@@ -72,3 +61,51 @@ def get_random_trajectories(
         np.hstack(u1_history),
         np.hstack(u2_history),
     )
+
+
+def get_random_trajectories(
+    initial_state: FloatArray,
+    n_control: int,
+    t_traj: FloatArray,
+    flag: str,
+    rng: np.random.Generator,
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray, FloatArray]:
+    params = get_params()
+    net_weight = params.mass * params.g
+
+    controls = rng.multivariate_normal(
+        mean=np.zeros(4, dtype=float),
+        cov=_control_covariance(flag),
+        size=n_control,
+    )
+    controls[:, 0] += net_weight
+    return _simulate_constant_controls(initial_state, controls, t_traj)
+
+
+def get_hover_local_trajectories(
+    initial_state: FloatArray,
+    n_control: int,
+    t_traj: FloatArray,
+    rng: np.random.Generator,
+    collective_std_newton: float,
+    collective_band_newton: float,
+    body_moment_std_nm: FloatArray,
+    body_moment_band_nm: FloatArray,
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray, FloatArray]:
+    params = get_params()
+    hover_thrust = params.mass * params.g
+
+    body_moment_std = np.asarray(body_moment_std_nm, dtype=float).reshape(3)
+    body_moment_band = np.asarray(body_moment_band_nm, dtype=float).reshape(3)
+
+    controls = np.zeros((n_control, 4), dtype=float)
+    controls[:, 0] = hover_thrust + rng.normal(0.0, collective_std_newton, size=n_control)
+    controls[:, 0] = np.clip(
+        controls[:, 0],
+        max(0.0, hover_thrust - collective_band_newton),
+        hover_thrust + collective_band_newton,
+    )
+    controls[:, 1:] = rng.normal(0.0, body_moment_std, size=(n_control, 3))
+    controls[:, 1:] = np.clip(controls[:, 1:], -body_moment_band, body_moment_band)
+
+    return _simulate_constant_controls(initial_state, controls, t_traj)

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from quantized_quadrotor_sitl.core.config import load_runtime_config, matlab_v2_profile, paper_v2_profile
+from quantized_quadrotor_sitl.core.config import hover_local_v1_profile, load_runtime_config, matlab_v2_profile, paper_v2_profile
 
 
 def test_matlab_profile_matches_v2_defaults():
@@ -16,6 +16,20 @@ def test_paper_profile_matches_manuscript_study():
     assert config.word_lengths == [4, 8, 12, 14, 16]
     assert config.run_count == 50
     assert config.tracking_enabled is True
+
+
+def test_hover_local_profile_matches_sitl_debug_defaults():
+    config = hover_local_v1_profile()
+    assert config.profile_name == "hover_local_v1"
+    assert config.dt == 1.0e-3
+    assert config.train_traj_duration == 0.15
+    assert config.training_n_control == 250
+    assert config.prediction_eval_n_control == 40
+    assert config.n_basis == 3
+    assert config.collective_std_newton == 2.5
+    assert config.collective_band_newton == 8.0
+    assert config.body_moment_std_nm == [0.10, 0.10, 0.05]
+    assert config.body_moment_band_nm == [0.30, 0.30, 0.15]
 
 
 def test_runtime_config_includes_estimator_topic_defaults():

@@ -63,6 +63,39 @@ class OfflineExperimentConfig:
 
 
 @dataclass(slots=True)
+class HoverLocalOfflineConfig:
+    profile_name: str
+    random_seed: int
+    dt: float
+    train_traj_duration: float
+    training_n_control: int
+    prediction_eval_n_control: int
+    n_basis: int
+    output_root: Path
+    collective_std_newton: float = 2.5
+    collective_band_newton: float = 8.0
+    body_moment_std_nm: list[float] = field(default_factory=lambda: [0.10, 0.10, 0.05])
+    body_moment_band_nm: list[float] = field(default_factory=lambda: [0.30, 0.30, 0.15])
+
+    def collective_bounds(self, hover_thrust_newton: float) -> tuple[float, float]:
+        return (
+            float(max(0.0, hover_thrust_newton - self.collective_band_newton)),
+            float(hover_thrust_newton + self.collective_band_newton),
+        )
+
+    def body_moment_std(self) -> FloatArray:
+        return np.asarray(self.body_moment_std_nm, dtype=float).reshape(3)
+
+    def body_moment_bounds(self) -> FloatArray:
+        return np.asarray(self.body_moment_band_nm, dtype=float).reshape(3)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["output_root"] = str(self.output_root)
+        return payload
+
+
+@dataclass(slots=True)
 class VehicleScalingConfig:
     max_collective_thrust_newton: float = 80.0
     max_body_torque_x_nm: float = 4.0
@@ -190,6 +223,19 @@ def paper_v2_profile(output_root: Path | None = None) -> OfflineExperimentConfig
         paper_tracking_word_lengths=[4, 8, 12, 14, 16],
         output_root=output_root or Path("results/offline"),
         mpc=MPCConfig(),
+    )
+
+
+def hover_local_v1_profile(output_root: Path | None = None) -> HoverLocalOfflineConfig:
+    return HoverLocalOfflineConfig(
+        profile_name="hover_local_v1",
+        random_seed=2141444,
+        dt=1.0e-3,
+        train_traj_duration=0.15,
+        training_n_control=250,
+        prediction_eval_n_control=40,
+        n_basis=3,
+        output_root=output_root or Path("results/offline"),
     )
 
 
