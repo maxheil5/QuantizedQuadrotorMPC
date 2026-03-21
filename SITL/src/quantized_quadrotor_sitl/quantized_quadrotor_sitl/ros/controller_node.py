@@ -13,8 +13,10 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float64MultiArray
 
+from ..controllers import compute_baseline_control
 from ..core.artifacts import load_edmd_artifact
 from ..core.config import RuntimeConfig, load_runtime_config
+from ..dynamics.params import get_params
 from ..edmd.basis import lift_state
 from ..experiments.runtime_reference import build_runtime_reference
 from ..mpc.qp import get_qp
@@ -40,7 +42,20 @@ class ControllerNode(Node):
         super().__init__("koopman_mpc_controller_node")
         config_path = self.declare_parameter("config_path", "configs/sitl_runtime.yaml").value
         self.config: RuntimeConfig = load_runtime_config(self._resolve_path(config_path))
-        self.model, self.metadata = load_edmd_artifact(self._resolve_path(self.config.model_artifact))
+        self.params = get_params()
+        self.model = None
+        self.metadata: dict[str, np.ndarray] = {}
+        if self.config.controller_mode == "edmd_mpc":
+            self.model, self.metadata = load_edmd_artifact(self._resolve_path(self.config.model_artifact))
+            self.get_logger().info(
+                f"Using controller mode '{self.config.controller_mode}' with artifact {self.config.model_artifact}"
+            )
+        elif self.config.controller_mode == "baseline_geometric":
+            self.get_logger().info(
+                "Using controller mode 'baseline_geometric' for a SITL-only hover sanity check."
+            )
+        else:
+            raise ValueError(f"unsupported controller mode: {self.config.controller_mode}")
         self.rng = np.random.default_rng(self.config.reference_seed)
         self.latest_state: np.ndarray | None = None
         self.reference_lifted: np.ndarray | None = None
@@ -54,6 +69,7 @@ class ControllerNode(Node):
         self.experiment_start_ns: int | None = None
         self.last_active_tick_ns: int | None = None
         self.shutdown_requested = False
+        self.baseline_z_error_integral = 0.0
         px4_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -148,9 +164,13 @@ class ControllerNode(Node):
             self.rng,
         )
         self.reference_sample_count = self.reference_physical.shape[1]
-        self.reference_lifted = np.column_stack(
-            [lift_state(self.reference_physical[:, idx], self.model.n_basis) for idx in range(self.reference_physical.shape[1])]
-        )
+        if self.config.controller_mode == "edmd_mpc":
+            assert self.model is not None
+            self.reference_lifted = np.column_stack(
+                [lift_state(self.reference_physical[:, idx], self.model.n_basis) for idx in range(self.reference_physical.shape[1])]
+            )
+        else:
+            self.reference_lifted = np.empty((0, 0), dtype=float)
 
     def _reference_window(self, reference_index: int) -> np.ndarray:
         assert self.reference_lifted is not None
@@ -257,7 +277,10 @@ class ControllerNode(Node):
             return
 
         now_ns = self.get_clock().now().nanoseconds
-        if self.latest_state is None or self.reference_lifted is None or self.reference_physical is None:
+        if self.latest_state is None or self.reference_physical is None:
+            self.flight_phase = FlightPhase.WAITING_FOR_STATE
+            return
+        if self.config.controller_mode == "edmd_mpc" and self.reference_lifted is None:
             self.flight_phase = FlightPhase.WAITING_FOR_STATE
             return
 
@@ -277,6 +300,7 @@ class ControllerNode(Node):
                 self.flight_phase = FlightPhase.ACTIVE
                 self.experiment_start_ns = now_ns
                 self.last_active_tick_ns = None
+                self.baseline_z_error_integral = 0.0
             else:
                 retry_cycles = max(1, self.config.arm_retry_cycles)
                 if self.arm_retry_counter % retry_cycles == 0:
@@ -303,31 +327,55 @@ class ControllerNode(Node):
 
         tick_dt_ms = 0.0 if self.last_active_tick_ns is None else (now_ns - self.last_active_tick_ns) / 1.0e6
         self.last_active_tick_ns = now_ns
+        tick_dt_s = (1.0 / self.config.control_rate_hz) if tick_dt_ms <= 0.0 else (tick_dt_ms / 1000.0)
 
         state_raw = self.latest_state.copy()
         state_used = state_raw.copy()
         if self.config.quantization_mode in {"state", "both"} and self.metadata:
             state_used = self._quantize_vector(state_used, "x_train_min", "x_train_max")
 
-        lifted_state = lift_state(state_used, self.model.n_basis)
-        lifted_reference = self._reference_window(reference_index)
-        solver_start = perf_counter()
-        f_vector, g_matrix, a_ineq, b_ineq = get_qp(
-            self.model,
-            lifted_state,
-            lifted_reference,
-            self.config.mpc.pred_horizon,
-            self.config.mpc,
-            self.config.vehicle_scaling.control_lower_bounds(),
-            self.config.vehicle_scaling.control_upper_bounds(),
-        )
-        solution = solve_qp(f_vector, g_matrix, a_ineq, b_ineq)
-        solver_ms = (perf_counter() - solver_start) * 1000.0
+        reference_row = self.reference_physical[:, reference_index]
+        if self.config.controller_mode == "edmd_mpc":
+            assert self.model is not None
+            lifted_state = lift_state(state_used, self.model.n_basis)
+            lifted_reference = self._reference_window(reference_index)
+            solver_start = perf_counter()
+            f_vector, g_matrix, a_ineq, b_ineq = get_qp(
+                self.model,
+                lifted_state,
+                lifted_reference,
+                self.config.mpc.pred_horizon,
+                self.config.mpc,
+                self.config.vehicle_scaling.control_lower_bounds(),
+                self.config.vehicle_scaling.control_upper_bounds(),
+            )
+            solution = solve_qp(f_vector, g_matrix, a_ineq, b_ineq)
+            solver_ms = (perf_counter() - solver_start) * 1000.0
 
-        control_raw = solution[:4]
-        control_used = control_raw.copy()
-        if self.config.quantization_mode in {"control", "both"} and self.metadata:
-            control_used = self._quantize_vector(control_used, "u_train_min", "u_train_max")
+            control_raw = solution[:4]
+            control_used = control_raw.copy()
+            if self.config.quantization_mode in {"control", "both"} and self.metadata:
+                control_used = self._quantize_vector(control_used, "u_train_min", "u_train_max")
+        else:
+            z_error = float(reference_row[2] - state_used[2])
+            self.baseline_z_error_integral += z_error * tick_dt_s
+            self.baseline_z_error_integral = float(
+                np.clip(
+                    self.baseline_z_error_integral,
+                    -self.config.baseline.z_integral_limit,
+                    self.config.baseline.z_integral_limit,
+                )
+            )
+            solver_start = perf_counter()
+            control_raw, control_used = compute_baseline_control(
+                state_used,
+                reference_row,
+                self.baseline_z_error_integral,
+                self.config.baseline,
+                self.config.vehicle_scaling,
+                self.params,
+            )
+            solver_ms = (perf_counter() - solver_start) * 1000.0
 
         px4_collective_command_newton, px4_collective_normalized, px4_thrust_body_z = self._publish_wrench(control_used)
 
@@ -347,7 +395,6 @@ class ControllerNode(Node):
             if rclpy.ok():
                 raise
 
-        reference_row = self.reference_physical[:, reference_index]
         self._log_writer.writerow(
             [
                 self.step_index,

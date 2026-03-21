@@ -3,6 +3,7 @@ offboard_warmup_cycles: 10
 arm_retry_cycles: 500
 force_arm_in_sitl: true
 force_arm_magic: 21196.0
+controller_mode: baseline_geometric
 model_artifact: results/offline/hover_local_v1/latest/edmd_unquantized.npz
 quantization_mode: none
 quantized_word_length: 12
@@ -27,6 +28,14 @@ vehicle_scaling:
   max_body_torque_x_nm: 1.0
   max_body_torque_y_nm: 1.0
   max_body_torque_z_nm: 0.6
+baseline:
+  position_gains_diag: [0.5, 0.5, 3.5]
+  velocity_gains_diag: [0.8, 0.8, 2.5]
+  attitude_gains_diag: [2.5, 2.5, 0.8]
+  angular_rate_gains_diag: [0.25, 0.25, 0.15]
+  z_integral_gain: 0.6
+  z_integral_limit: 0.8
+  max_tilt_deg: 12.0
 mpc:
   pred_horizon: 10
   sim_timestep: 0.001

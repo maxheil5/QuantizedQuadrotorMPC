@@ -37,11 +37,19 @@ def test_runtime_config_includes_estimator_topic_defaults():
     assert config.control_rate_hz == 100.0
     assert config.force_arm_in_sitl is True
     assert config.force_arm_magic == 21196.0
+    assert config.controller_mode == "baseline_geometric"
     assert config.reference_mode == "takeoff_hold"
     assert config.vehicle_scaling.max_collective_thrust_newton == 80.0
     assert config.vehicle_scaling.max_body_torque_x_nm == 1.0
     assert config.vehicle_scaling.max_body_torque_y_nm == 1.0
     assert config.vehicle_scaling.max_body_torque_z_nm == 0.6
+    assert config.baseline.position_gains_diag == [0.5, 0.5, 3.5]
+    assert config.baseline.velocity_gains_diag == [0.8, 0.8, 2.5]
+    assert config.baseline.attitude_gains_diag == [2.5, 2.5, 0.8]
+    assert config.baseline.angular_rate_gains_diag == [0.25, 0.25, 0.15]
+    assert config.baseline.z_integral_gain == 0.6
+    assert config.baseline.z_integral_limit == 0.8
+    assert config.baseline.max_tilt_deg == 12.0
     assert config.mpc.pred_horizon == 10
     assert config.mpc.sim_timestep == 1.0e-3
     assert config.mpc.position_error_weights_diag == [250.0, 250.0, 5000.0]

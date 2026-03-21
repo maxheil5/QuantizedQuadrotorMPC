@@ -150,12 +150,36 @@ class VehicleScalingConfig:
 
 
 @dataclass(slots=True)
+class BaselineControllerConfig:
+    position_gains_diag: list[float] = field(default_factory=lambda: [0.5, 0.5, 3.5])
+    velocity_gains_diag: list[float] = field(default_factory=lambda: [0.8, 0.8, 2.5])
+    attitude_gains_diag: list[float] = field(default_factory=lambda: [2.5, 2.5, 0.8])
+    angular_rate_gains_diag: list[float] = field(default_factory=lambda: [0.25, 0.25, 0.15])
+    z_integral_gain: float = 0.6
+    z_integral_limit: float = 0.8
+    max_tilt_deg: float = 12.0
+
+    def position_gains(self) -> FloatArray:
+        return np.asarray(self.position_gains_diag, dtype=float).reshape(3)
+
+    def velocity_gains(self) -> FloatArray:
+        return np.asarray(self.velocity_gains_diag, dtype=float).reshape(3)
+
+    def attitude_gains(self) -> FloatArray:
+        return np.asarray(self.attitude_gains_diag, dtype=float).reshape(3)
+
+    def angular_rate_gains(self) -> FloatArray:
+        return np.asarray(self.angular_rate_gains_diag, dtype=float).reshape(3)
+
+
+@dataclass(slots=True)
 class RuntimeConfig:
     control_rate_hz: float = 100.0
     offboard_warmup_cycles: int = 10
     arm_retry_cycles: int = 500
     force_arm_in_sitl: bool = True
     force_arm_magic: float = 21196.0
+    controller_mode: str = "edmd_mpc"
     model_artifact: str = "results/offline/paper_v2/latest/edmd_unquantized.npz"
     quantization_mode: str = "none"
     quantized_word_length: int = 12
@@ -177,6 +201,7 @@ class RuntimeConfig:
     state_history_limit: int = 10000
     results_dir: str = "results/sitl/latest"
     vehicle_scaling: VehicleScalingConfig = field(default_factory=VehicleScalingConfig)
+    baseline: BaselineControllerConfig = field(default_factory=BaselineControllerConfig)
     mpc: MPCConfig = field(default_factory=MPCConfig)
 
 
@@ -243,5 +268,6 @@ def load_runtime_config(path: Path) -> RuntimeConfig:
     with path.open("r", encoding="utf-8") as stream:
         payload = yaml.safe_load(stream) or {}
     vehicle_scaling = VehicleScalingConfig(**payload.pop("vehicle_scaling", {}))
+    baseline = BaselineControllerConfig(**payload.pop("baseline", {}))
     mpc = MPCConfig(**payload.pop("mpc", {}))
-    return RuntimeConfig(vehicle_scaling=vehicle_scaling, mpc=mpc, **payload)
+    return RuntimeConfig(vehicle_scaling=vehicle_scaling, baseline=baseline, mpc=mpc, **payload)
