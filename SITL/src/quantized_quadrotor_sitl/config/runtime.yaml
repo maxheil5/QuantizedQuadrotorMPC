@@ -1,4 +1,4 @@
-control_rate_hz: 100.0
+control_rate_hz: 50.0
 offboard_warmup_cycles: 10
 arm_retry_cycles: 500
 force_arm_in_sitl: true
@@ -30,6 +30,7 @@ vehicle_scaling:
 mpc:
   pred_horizon: 10
   sim_timestep: 0.001
+  runtime_timestep: 0.02
   sim_duration: 1.2
   use_casadi: false
   position_error_weights_diag: [250.0, 250.0, 5000.0]

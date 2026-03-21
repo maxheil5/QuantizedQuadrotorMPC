@@ -16,6 +16,7 @@ FloatArray = NDArray[np.float64]
 class MPCConfig:
     pred_horizon: int = 10
     sim_timestep: float = 1.0e-3
+    runtime_timestep: float | None = None
     sim_duration: float = 1.2
     use_casadi: bool = False
     position_error_weights_diag: list[float] = field(default_factory=lambda: [1.0e4, 1.0e4, 1.0e2])
@@ -27,6 +28,22 @@ class MPCConfig:
     @property
     def max_iter(self) -> int:
         return int(np.floor(self.sim_duration / self.sim_timestep))
+
+    def effective_timestep(self) -> float:
+        if self.runtime_timestep is None or self.runtime_timestep <= 0.0:
+            return self.sim_timestep
+        return float(self.runtime_timestep)
+
+    def runtime_step_multiple(self) -> int:
+        effective_timestep = self.effective_timestep()
+        ratio = effective_timestep / self.sim_timestep
+        step_multiple = int(round(ratio))
+        if step_multiple < 1 or not np.isclose(step_multiple * self.sim_timestep, effective_timestep, atol=1.0e-12):
+            raise ValueError(
+                "runtime_timestep must be a positive integer multiple of sim_timestep "
+                f"(got runtime_timestep={effective_timestep}, sim_timestep={self.sim_timestep})"
+            )
+        return step_multiple
 
     def position_error_weights(self) -> FloatArray:
         return np.asarray(self.position_error_weights_diag, dtype=float).reshape(3)

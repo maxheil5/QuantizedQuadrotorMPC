@@ -13,7 +13,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float64MultiArray
 
-from ..core.artifacts import load_edmd_artifact
+from ..core.artifacts import coarsen_edmd_model, load_edmd_artifact
 from ..core.config import RuntimeConfig, load_runtime_config
 from ..edmd.basis import lift_state
 from ..experiments.runtime_reference import build_runtime_reference
@@ -40,7 +40,15 @@ class ControllerNode(Node):
         super().__init__("koopman_mpc_controller_node")
         config_path = self.declare_parameter("config_path", "configs/sitl_runtime.yaml").value
         self.config: RuntimeConfig = load_runtime_config(self._resolve_path(config_path))
-        self.model, self.metadata = load_edmd_artifact(self._resolve_path(self.config.model_artifact))
+        base_model, self.metadata = load_edmd_artifact(self._resolve_path(self.config.model_artifact))
+        self.mpc_timestep = self.config.mpc.effective_timestep()
+        self.mpc_step_multiple = self.config.mpc.runtime_step_multiple()
+        self.model = coarsen_edmd_model(base_model, self.mpc_step_multiple)
+        if self.mpc_step_multiple > 1:
+            self.get_logger().info(
+                "Using coarsened EDMD model with "
+                f"dt={self.mpc_timestep:.3f}s ({self.mpc_step_multiple} x {self.config.mpc.sim_timestep:.3f}s)"
+            )
         self.rng = np.random.default_rng(self.config.reference_seed)
         self.latest_state: np.ndarray | None = None
         self.reference_lifted: np.ndarray | None = None
@@ -144,7 +152,7 @@ class ControllerNode(Node):
             state0,
             self.config.reference_mode,
             self.config.reference_duration_s,
-            self.config.mpc.sim_timestep,
+            self.mpc_timestep,
             self.rng,
         )
         self.reference_sample_count = self.reference_physical.shape[1]
@@ -296,7 +304,7 @@ class ControllerNode(Node):
             self.experiment_start_ns = now_ns
 
         experiment_time_s = max(0.0, (now_ns - self.experiment_start_ns) / 1.0e9)
-        reference_index = int(np.floor(experiment_time_s / self.config.mpc.sim_timestep + 1.0e-9))
+        reference_index = int(np.floor(experiment_time_s / self.mpc_timestep + 1.0e-9))
         if reference_index >= self.reference_sample_count:
             self._finish_run(FlightPhase.COMPLETED, "Completed the SITL reference window.")
             return
