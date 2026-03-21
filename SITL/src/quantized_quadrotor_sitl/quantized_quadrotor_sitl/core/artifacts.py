@@ -23,23 +23,3 @@ def load_edmd_artifact(path: Path) -> tuple[EDMDModel, dict[str, np.ndarray]]:
         if key in payload
     }
     return model, metadata
-
-
-def coarsen_edmd_model(model: EDMDModel, step_multiple: int) -> EDMDModel:
-    if step_multiple <= 1:
-        return model
-
-    a_power = np.eye(model.A.shape[0], dtype=float)
-    b_accum = np.zeros_like(model.B, dtype=float)
-    for _ in range(step_multiple):
-        b_accum += a_power @ model.B
-        a_power = a_power @ model.A
-
-    return EDMDModel(
-        A=a_power,
-        B=b_accum,
-        C=model.C,
-        Z1=model.Z1,
-        Z2=model.Z2,
-        n_basis=model.n_basis,
-    )

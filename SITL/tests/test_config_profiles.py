@@ -20,7 +20,7 @@ def test_paper_profile_matches_manuscript_study():
 
 def test_runtime_config_includes_estimator_topic_defaults():
     config = load_runtime_config(Path("SITL/configs/sitl_runtime.yaml"))
-    assert config.control_rate_hz == 50.0
+    assert config.control_rate_hz == 100.0
     assert config.force_arm_in_sitl is True
     assert config.force_arm_magic == 21196.0
     assert config.reference_mode == "takeoff_hold"
@@ -30,9 +30,6 @@ def test_runtime_config_includes_estimator_topic_defaults():
     assert config.vehicle_scaling.max_body_torque_z_nm == 0.6
     assert config.mpc.pred_horizon == 10
     assert config.mpc.sim_timestep == 1.0e-3
-    assert config.mpc.runtime_timestep == 0.02
-    assert config.mpc.effective_timestep() == 0.02
-    assert config.mpc.runtime_step_multiple() == 20
     assert config.mpc.position_error_weights_diag == [250.0, 250.0, 5000.0]
     assert config.mpc.velocity_error_weights_diag == [40.0, 40.0, 200.0]
     assert config.mpc.attitude_error_weight == 100.0
