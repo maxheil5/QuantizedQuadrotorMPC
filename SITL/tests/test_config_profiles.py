@@ -62,3 +62,16 @@ def test_runtime_config_includes_estimator_topic_defaults():
     assert config.vehicle_attitude_topic == "/fmu/out/vehicle_attitude"
     assert config.vehicle_angular_velocity_topic == "/fmu/out/vehicle_angular_velocity"
     assert config.vehicle_status_topic == "/fmu/out/vehicle_status_v1"
+
+
+def test_sitl_retrained_edmd_runtime_config_preserves_baseline_scaling():
+    config = load_runtime_config(Path("SITL/configs/sitl_runtime_sitl_retrain_edmd.yaml"))
+    assert config.controller_mode == "edmd_mpc"
+    assert config.model_artifact == "results/offline/sitl_baseline_v1/latest/edmd_unquantized.npz"
+    assert config.reference_mode == "takeoff_hold"
+    assert config.vehicle_scaling.max_collective_thrust_newton == 62.0
+    assert config.vehicle_scaling.max_body_torque_x_nm == 1.0
+    assert config.vehicle_scaling.max_body_torque_y_nm == 1.0
+    assert config.vehicle_scaling.max_body_torque_z_nm == 0.6
+    assert config.mpc.pred_horizon == 10
+    assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
