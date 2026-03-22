@@ -43,12 +43,12 @@ def test_runtime_config_includes_estimator_topic_defaults():
     assert config.vehicle_scaling.max_body_torque_x_nm == 1.0
     assert config.vehicle_scaling.max_body_torque_y_nm == 1.0
     assert config.vehicle_scaling.max_body_torque_z_nm == 0.6
-    assert config.baseline.position_gains_diag == [0.5, 0.5, 3.5]
-    assert config.baseline.velocity_gains_diag == [0.8, 0.8, 2.5]
+    assert config.baseline.position_gains_diag == [0.5, 0.5, 5.5]
+    assert config.baseline.velocity_gains_diag == [0.8, 0.8, 3.0]
     assert config.baseline.attitude_gains_diag == [2.5, 2.5, 0.8]
     assert config.baseline.angular_rate_gains_diag == [0.25, 0.25, 0.15]
-    assert config.baseline.z_integral_gain == 0.6
-    assert config.baseline.z_integral_limit == 0.8
+    assert config.baseline.z_integral_gain == 1.2
+    assert config.baseline.z_integral_limit == 1.5
     assert config.baseline.max_tilt_deg == 12.0
     assert config.mpc.pred_horizon == 10
     assert config.mpc.sim_timestep == 1.0e-3

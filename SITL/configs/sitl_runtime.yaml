@@ -29,12 +29,12 @@ vehicle_scaling:
   max_body_torque_y_nm: 1.0
   max_body_torque_z_nm: 0.6
 baseline:
-  position_gains_diag: [0.5, 0.5, 3.5]
-  velocity_gains_diag: [0.8, 0.8, 2.5]
+  position_gains_diag: [0.5, 0.5, 5.5]
+  velocity_gains_diag: [0.8, 0.8, 3.0]
   attitude_gains_diag: [2.5, 2.5, 0.8]
   angular_rate_gains_diag: [0.25, 0.25, 0.15]
-  z_integral_gain: 0.6
-  z_integral_limit: 0.8
+  z_integral_gain: 1.2
+  z_integral_limit: 1.5
   max_tilt_deg: 12.0
 mpc:
   pred_horizon: 10
