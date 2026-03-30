@@ -1,8 +1,22 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import sys
 
 import streamlit as st
+
+# Allow direct execution via `streamlit run dashboard/app.py` or `python dashboard/app.py`
+# without requiring the launcher to preconfigure PYTHONPATH.
+SITL_ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_ROOT = SITL_ROOT / "src" / "quantized_quadrotor_sitl"
+matplotlib_cache_dir = SITL_ROOT / ".cache" / "matplotlib"
+matplotlib_cache_dir.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("MPLCONFIGDIR", str(matplotlib_cache_dir))
+for candidate in (SITL_ROOT, PACKAGE_ROOT):
+    candidate_str = str(candidate)
+    if candidate_str not in sys.path:
+        sys.path.insert(0, candidate_str)
 
 from dashboard.data import (
     available_sources,
