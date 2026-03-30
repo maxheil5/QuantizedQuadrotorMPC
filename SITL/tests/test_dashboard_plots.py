@@ -6,6 +6,7 @@ from pathlib import Path
 
 import matplotlib.figure
 import numpy as np
+import plotly.graph_objects as go
 
 
 SITL_ROOT = Path(__file__).resolve().parents[1]
@@ -94,8 +95,8 @@ def test_dashboard_plot_builders_return_matplotlib_figures(tmp_path: Path):
 
     data = prepare_run_data("plot_run", "raw", "used", results_root)
 
+    interactive_trajectory = plot_trajectory_3d(data)
     figures = [
-        plot_trajectory_3d(data),
         plot_xy_trajectory(data),
         plot_position_states(data),
         plot_velocity_states(data),
@@ -112,5 +113,6 @@ def test_dashboard_plot_builders_return_matplotlib_figures(tmp_path: Path):
     if px4_figure is not None:
         figures.append(px4_figure)
 
+    assert isinstance(interactive_trajectory, go.Figure)
     assert figures
     assert all(isinstance(figure, matplotlib.figure.Figure) for figure in figures)

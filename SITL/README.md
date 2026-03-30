@@ -58,7 +58,7 @@ Ubuntu 22.04 + ROS 2 Humble + Gazebo Harmonic + PX4 setup is documented in [docs
 
 ## Dashboard
 
-A minimal Streamlit dashboard for paper-facing SITL plots lives under [dashboard/README.md](/Users/maxheil/Documents/Github/QuantizedQuadrotorMPC/SITL/dashboard/README.md). It reads one selected run at a time from `results/sitl/<run>/runtime_log.csv`, lists the available run folders in a dropdown, and renders MATLAB-style trajectory, error, state, control, and timing plots.
+A minimal Streamlit dashboard for paper-facing SITL plots lives under [dashboard/README.md](/Users/maxheil/Documents/Github/QuantizedQuadrotorMPC/SITL/dashboard/README.md). It reads one selected run at a time from `results/sitl/<run>/runtime_log.csv`, lists the available run folders in a dropdown, renders an interactive 3D trajectory view, and keeps the rest of the plots in a MATLAB-style trajectory/error/state/control/timing layout.
 
 Launch it with:
 

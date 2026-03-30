@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+import plotly.graph_objects as go
 
 from .data import DashboardRunData
 from .style import ACTUAL_COLOR, ERROR_NORM_COLOR, MATLAB_COLOR_ORDER, REFERENCE_COLOR, apply_matlab_style, style_figure
@@ -50,33 +51,45 @@ def _error_figure(
     return style_figure(fig)
 
 
-def plot_trajectory_3d(data: DashboardRunData) -> plt.Figure:
-    fig = plt.figure(figsize=(8, 6))
-    ax = fig.add_subplot(111, projection="3d")
-    ax.plot(
-        data.state_history[0, :],
-        data.state_history[1, :],
-        data.state_history[2, :],
-        color=ACTUAL_COLOR,
-        linewidth=1.8,
-        label="Actual",
+def plot_trajectory_3d(data: DashboardRunData) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter3d(
+            x=data.state_history[0, :],
+            y=data.state_history[1, :],
+            z=data.state_history[2, :],
+            mode="lines",
+            name="Actual",
+            line={"color": f"rgb({ACTUAL_COLOR[0] * 255:.0f}, {ACTUAL_COLOR[1] * 255:.0f}, {ACTUAL_COLOR[2] * 255:.0f})", "width": 6},
+        )
     )
-    ax.plot(
-        data.reference_history[0, :],
-        data.reference_history[1, :],
-        data.reference_history[2, :],
-        color=REFERENCE_COLOR,
-        linestyle="--",
-        linewidth=1.8,
-        label="Reference",
+    fig.add_trace(
+        go.Scatter3d(
+            x=data.reference_history[0, :],
+            y=data.reference_history[1, :],
+            z=data.reference_history[2, :],
+            mode="lines",
+            name="Reference",
+            line={
+                "color": f"rgb({REFERENCE_COLOR[0] * 255:.0f}, {REFERENCE_COLOR[1] * 255:.0f}, {REFERENCE_COLOR[2] * 255:.0f})",
+                "width": 6,
+                "dash": "dash",
+            },
+        )
     )
-    ax.set_title("3D Trajectory")
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.set_zlabel("z (m)")
-    ax.legend(loc="upper right")
-    ax.grid(True, which="major", color="#d9d9d9", linewidth=0.8)
-    fig.patch.set_facecolor("white")
+    fig.update_layout(
+        title="3D Trajectory",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin={"l": 0, "r": 0, "t": 48, "b": 0},
+        legend={"x": 0.02, "y": 0.98, "bgcolor": "rgba(255,255,255,0.85)"},
+        scene={
+            "xaxis": {"title": "x (m)", "backgroundcolor": "white", "gridcolor": "#d9d9d9", "showbackground": True},
+            "yaxis": {"title": "y (m)", "backgroundcolor": "white", "gridcolor": "#d9d9d9", "showbackground": True},
+            "zaxis": {"title": "z (m)", "backgroundcolor": "white", "gridcolor": "#d9d9d9", "showbackground": True},
+            "aspectmode": "data",
+        },
+    )
     return fig
 
 

@@ -16,7 +16,7 @@ The app will:
 - show them in a dropdown
 - load the selected run's `runtime_log.csv`
 - optionally read `run_metadata.json` if present
-- render MATLAB-style trajectory, error, state, control, and timing plots
+- render an interactive 3D trajectory plus MATLAB-style error, state, control, and timing plots
 
 ## Expected Inputs
 

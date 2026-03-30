@@ -99,7 +99,7 @@ def _render_overview(data) -> None:
 
 def main() -> None:
     st.title("SITL Paper Dashboard")
-    st.caption("Minimal MATLAB-style plots for paper-facing SITL analysis.")
+    st.caption("Minimal MATLAB-style plots for paper-facing SITL analysis, with an interactive 3D trajectory view.")
 
     results_root = default_results_root()
 
@@ -145,7 +145,7 @@ def main() -> None:
         _render_overview(data)
 
     with tabs[1]:
-        st.pyplot(plot_trajectory_3d(data), clear_figure=True)
+        st.plotly_chart(plot_trajectory_3d(data), use_container_width=True, theme=None, config={"displaylogo": False})
         st.pyplot(plot_xy_trajectory(data), clear_figure=True)
 
     with tabs[2]:

@@ -13,9 +13,9 @@ export PYTHONPATH="${ROOT_DIR}:${PACKAGE_ROOT}:${PYTHONPATH:-}"
 export MPLCONFIGDIR="${ROOT_DIR}/.cache/matplotlib"
 mkdir -p "${MPLCONFIGDIR}"
 
-if ! python -c "import streamlit" >/dev/null 2>&1; then
-  echo "streamlit is missing in the active Python environment." >&2
-  echo "Install it with: python -m pip install streamlit" >&2
+if ! python -c "import streamlit, plotly" >/dev/null 2>&1; then
+  echo "streamlit and plotly are required in the active Python environment." >&2
+  echo "Install them with: python -m pip install streamlit plotly" >&2
   exit 1
 fi
 
