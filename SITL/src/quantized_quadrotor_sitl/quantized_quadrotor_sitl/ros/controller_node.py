@@ -25,7 +25,7 @@ from ..mpc.simulate import solve_qp
 from ..quantization.dither import dither_signal
 from ..quantization.partition import partition_range
 from ..telemetry.adapter import physical_control_to_px4_wrench
-from ..utils.io import ensure_dir, write_json
+from ..utils.io import create_sitl_results_directory, write_json
 from .offboard import offboard_control_mode_msg
 
 
@@ -113,7 +113,7 @@ class ControllerNode(Node):
             px4_qos,
         )
 
-        results_dir = ensure_dir(self._resolve_path(self.config.results_dir))
+        results_dir = create_sitl_results_directory(self._resolve_path(self.config.results_dir))
         self.log_path = results_dir / "runtime_log.csv"
         self.metadata_path = results_dir / "run_metadata.json"
         self._log_stream = self.log_path.open("w", encoding="utf-8", newline="")
