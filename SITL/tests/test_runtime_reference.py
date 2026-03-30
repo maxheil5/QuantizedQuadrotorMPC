@@ -7,6 +7,7 @@ from quantized_quadrotor_sitl.core.config import initial_state
 from quantized_quadrotor_sitl.experiments.runtime_reference import (
     build_hover_step_reference,
     build_paper_random_reference,
+    build_sitl_identification_reference,
     build_takeoff_hold_reference,
     build_runtime_reference,
 )
@@ -72,3 +73,34 @@ def test_runtime_reference_selector_preserves_mode_specific_builders():
     )
     expected_random_reference = build_paper_random_reference(state0, 10.0, 1.0e-3, rng_expected)
     npt.assert_allclose(selected_random_reference, expected_random_reference)
+
+
+def test_sitl_identification_reference_matches_bounds_and_translation_only_profile():
+    state0 = initial_state()
+    rng = np.random.default_rng(2141444)
+    reference = build_sitl_identification_reference(state0, reference_duration_s=24.0, sim_timestep=1.0e-3, rng=rng)
+
+    assert reference.shape == (18, 24000)
+    npt.assert_allclose(reference[6:15, :], np.repeat(state0[6:15, None], reference.shape[1], axis=1))
+    npt.assert_allclose(reference[15:18, :], np.zeros((3, reference.shape[1])))
+    assert np.min(reference[2, :]) >= state0[2] - 1.0e-9
+    assert np.max(reference[2, :]) <= state0[2] + 0.85 + 1.0e-9
+    assert np.min(reference[0, :]) >= state0[0] - 0.20 - 1.0e-9
+    assert np.max(reference[0, :]) <= state0[0] + 0.20 + 1.0e-9
+    assert np.min(reference[1, :]) >= state0[1] - 0.20 - 1.0e-9
+    assert np.max(reference[1, :]) <= state0[1] + 0.20 + 1.0e-9
+
+
+def test_runtime_reference_selector_supports_sitl_identification_mode():
+    state0 = initial_state()
+    rng_selected = np.random.default_rng(2141444)
+    rng_expected = np.random.default_rng(2141444)
+    selected = build_runtime_reference(
+        state0,
+        reference_mode="sitl_identification_v1",
+        reference_duration_s=24.0,
+        sim_timestep=1.0e-3,
+        rng=rng_selected,
+    )
+    expected = build_sitl_identification_reference(state0, 24.0, 1.0e-3, rng_expected)
+    npt.assert_allclose(selected, expected)

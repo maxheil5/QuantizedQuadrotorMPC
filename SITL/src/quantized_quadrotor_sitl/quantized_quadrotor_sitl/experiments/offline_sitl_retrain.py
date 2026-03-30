@@ -8,7 +8,13 @@ import numpy as np
 from ..core.types import ExperimentOutput
 from ..edmd.fit import get_edmd
 from ..utils.io import create_run_directory, save_npz, write_csv, write_json
-from .sitl_dataset import build_sitl_edmd_snapshots, evaluate_model_on_sitl_run, load_sitl_run_dataset
+from .sitl_dataset import (
+    build_sitl_edmd_snapshots,
+    compute_sitl_run_diagnostics,
+    evaluate_model_on_sitl_run,
+    excitation_warnings_from_diagnostics,
+    load_sitl_run_dataset,
+)
 
 
 def _resolve_run_spec(runs_root: Path, raw_spec: str) -> Path:
@@ -51,9 +57,12 @@ def run_sitl_retrain(
     )
 
     metrics_rows: list[dict[str, object]] = []
+    train_diagnostics = [compute_sitl_run_diagnostics(dataset) for dataset in train_datasets]
+    eval_diagnostics = [compute_sitl_run_diagnostics(dataset) for dataset in (eval_datasets if eval_datasets else train_datasets)]
     for split_name, datasets in (("train", train_datasets), ("eval", eval_datasets if eval_datasets else train_datasets)):
         for dataset in datasets:
             scores = evaluate_model_on_sitl_run(dataset, model)
+            diagnostics = compute_sitl_run_diagnostics(dataset)
             metrics_rows.append(
                 {
                     "split": split_name,
@@ -67,11 +76,39 @@ def run_sitl_retrain(
                     "rmse_dx": float(scores.dx),
                     "rmse_theta": float(scores.theta),
                     "rmse_wb": float(scores.wb),
+                    **{
+                        key: value
+                        for key, value in diagnostics.items()
+                        if key
+                        not in {
+                            "run_name",
+                            "samples",
+                            "pairs",
+                            "tick_dt_ms_mean",
+                            "tick_dt_ms_std",
+                            "solver_ms_mean",
+                        }
+                    },
                 }
             )
 
     metrics_csv = output_dir / "metrics_summary.csv"
     write_csv(metrics_csv, metrics_rows)
+    excitation_thresholds = {
+        "collective_std_min_newton": 1.0,
+        "body_moment_std_min_nm": [0.02, 0.02, 0.01],
+        "state_z_range_min_m": 0.30,
+        "state_xy_range_min_m": 0.10,
+        "collective_below_1n_fraction_max": 0.25,
+    }
+    warnings = excitation_warnings_from_diagnostics(
+        train_diagnostics,
+        collective_std_threshold=float(excitation_thresholds["collective_std_min_newton"]),
+        body_moment_std_threshold=np.asarray(excitation_thresholds["body_moment_std_min_nm"], dtype=float),
+        z_range_threshold=float(excitation_thresholds["state_z_range_min_m"]),
+        xy_range_threshold=float(excitation_thresholds["state_xy_range_min_m"]),
+        collective_below_1n_fraction_threshold=float(excitation_thresholds["collective_below_1n_fraction_max"]),
+    )
     summary_json = output_dir / "summary.json"
     write_json(
         summary_json,
@@ -82,6 +119,10 @@ def run_sitl_retrain(
             "state_source": state_source,
             "control_source": control_source,
             "n_basis": n_basis,
+            "excitation_thresholds": excitation_thresholds,
+            "warnings": warnings,
+            "train_diagnostics": train_diagnostics,
+            "eval_diagnostics": eval_diagnostics,
             "notes": [
                 "This path fits EDMD from actual SITL runtime logs rather than the simplified SRB training simulator.",
                 "The existing paper/offline parity paths are intentionally left untouched.",
@@ -89,6 +130,8 @@ def run_sitl_retrain(
             ],
         },
     )
+    for warning in warnings:
+        print(f"WARNING: {warning}")
     return ExperimentOutput(
         root_dir=output_dir,
         metrics_csv=metrics_csv,

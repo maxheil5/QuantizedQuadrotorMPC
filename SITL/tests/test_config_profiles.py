@@ -75,3 +75,21 @@ def test_sitl_retrained_edmd_runtime_config_preserves_baseline_scaling():
     assert config.vehicle_scaling.max_body_torque_z_nm == 0.6
     assert config.mpc.pred_horizon == 10
     assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
+
+
+def test_sitl_identification_runtime_config_preserves_known_good_baseline():
+    config = load_runtime_config(Path("SITL/configs/sitl_runtime_identification.yaml"))
+    assert config.controller_mode == "baseline_geometric"
+    assert config.quantization_mode == "none"
+    assert config.reference_mode == "sitl_identification_v1"
+    assert config.reference_duration_s == 24.0
+    assert config.vehicle_scaling.max_collective_thrust_newton == 62.0
+    assert config.vehicle_scaling.max_body_torque_x_nm == 1.0
+    assert config.vehicle_scaling.max_body_torque_y_nm == 1.0
+    assert config.vehicle_scaling.max_body_torque_z_nm == 0.6
+    assert config.baseline.position_gains_diag == [0.5, 0.5, 5.5]
+    assert config.baseline.velocity_gains_diag == [0.8, 0.8, 3.0]
+    assert config.baseline.attitude_gains_diag == [2.5, 2.5, 0.8]
+    assert config.baseline.angular_rate_gains_diag == [0.25, 0.25, 0.15]
+    assert config.baseline.z_integral_gain == 1.2
+    assert config.baseline.z_integral_limit == 1.5

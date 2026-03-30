@@ -12,3 +12,4 @@ src/px4_msgs/
 __pycache__/
 *.pyc
 .pytest_cache/
+.cache/

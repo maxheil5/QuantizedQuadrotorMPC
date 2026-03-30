@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import asdict
 from enum import Enum
 from pathlib import Path
 from time import perf_counter
@@ -24,7 +25,7 @@ from ..mpc.simulate import solve_qp
 from ..quantization.dither import dither_signal
 from ..quantization.partition import partition_range
 from ..telemetry.adapter import physical_control_to_px4_wrench
-from ..utils.io import ensure_dir
+from ..utils.io import ensure_dir, write_json
 from .offboard import offboard_control_mode_msg
 
 
@@ -114,6 +115,7 @@ class ControllerNode(Node):
 
         results_dir = ensure_dir(self._resolve_path(self.config.results_dir))
         self.log_path = results_dir / "runtime_log.csv"
+        self.metadata_path = results_dir / "run_metadata.json"
         self._log_stream = self.log_path.open("w", encoding="utf-8", newline="")
         self._log_writer = csv.writer(self._log_stream)
         self._log_writer.writerow(
@@ -134,6 +136,7 @@ class ControllerNode(Node):
                 *[f"reference_{idx}" for idx in range(18)],
             ]
         )
+        self._write_run_metadata()
 
         self.timer = self.create_timer(1.0 / self.config.control_rate_hz, self._control_tick)
 
@@ -171,6 +174,24 @@ class ControllerNode(Node):
             )
         else:
             self.reference_lifted = np.empty((0, 0), dtype=float)
+        self._write_run_metadata(state0)
+
+    def _write_run_metadata(self, initial_state: np.ndarray | None = None) -> None:
+        payload: dict[str, object] = {
+            "controller_mode": self.config.controller_mode,
+            "reference_mode": self.config.reference_mode,
+            "reference_seed": int(self.config.reference_seed),
+            "reference_duration_s": float(self.config.reference_duration_s),
+            "model_artifact": self.config.model_artifact,
+            "quantization_mode": self.config.quantization_mode,
+            "baseline": asdict(self.config.baseline),
+            "vehicle_scaling": asdict(self.config.vehicle_scaling),
+        }
+        if initial_state is not None:
+            payload["initial_state"] = np.asarray(initial_state, dtype=float).reshape(18).tolist()
+        if self.reference_sample_count > 0:
+            payload["reference_sample_count"] = int(self.reference_sample_count)
+        write_json(self.metadata_path, payload)
 
     def _reference_window(self, reference_index: int) -> np.ndarray:
         assert self.reference_lifted is not None
