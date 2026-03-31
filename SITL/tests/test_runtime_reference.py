@@ -10,6 +10,7 @@ from quantized_quadrotor_sitl.experiments.runtime_reference import (
     build_sitl_identification_reference,
     build_sitl_identification_reference_v2,
     build_sitl_identification_reference_v3,
+    build_sitl_identification_reference_v4,
     build_takeoff_hold_reference,
     build_runtime_reference,
 )
@@ -182,4 +183,45 @@ def test_runtime_reference_selector_supports_sitl_identification_v3_mode():
         rng=rng_selected,
     )
     expected = build_sitl_identification_reference_v3(state0, 24.0, 1.0e-3, rng_expected)
+    npt.assert_allclose(selected, expected)
+
+
+def test_sitl_identification_reference_v4_targets_forward_axis_excitation():
+    state0 = initial_state()
+    rng = np.random.default_rng(2141444)
+    reference = build_sitl_identification_reference_v4(state0, reference_duration_s=24.0, sim_timestep=1.0e-3, rng=rng)
+
+    assert reference.shape == (18, 24000)
+    assert np.min(reference[2, :]) >= state0[2] - 1.0e-9
+    assert np.max(reference[2, :]) <= state0[2] + 0.85 + 1.0e-9
+    assert np.min(reference[0, :]) >= state0[0] - 0.55 - 1.0e-9
+    assert np.max(reference[0, :]) <= state0[0] + 0.55 + 1.0e-9
+    assert np.min(reference[1, :]) >= state0[1] - 0.25 - 1.0e-9
+    assert np.max(reference[1, :]) <= state0[1] + 0.25 + 1.0e-9
+    assert np.max(np.abs(reference[3:6, :])) > 0.30
+    assert np.max(np.abs(reference[15:18, :])) <= 1.0e-9
+
+    x_range = float(np.max(reference[0, :]) - np.min(reference[0, :]))
+    y_range = float(np.max(reference[1, :]) - np.min(reference[1, :]))
+    assert x_range > 0.55
+    assert y_range > 0.12
+    assert x_range > y_range
+
+    rotation_history = reference[6:15, :].reshape(3, 3, -1, order="F")
+    determinants = np.linalg.det(np.moveaxis(rotation_history, 2, 0))
+    npt.assert_allclose(determinants, np.ones_like(determinants), atol=1.0e-6)
+
+
+def test_runtime_reference_selector_supports_sitl_identification_v4_mode():
+    state0 = initial_state()
+    rng_selected = np.random.default_rng(2141444)
+    rng_expected = np.random.default_rng(2141444)
+    selected = build_runtime_reference(
+        state0,
+        reference_mode="sitl_identification_v4",
+        reference_duration_s=24.0,
+        sim_timestep=1.0e-3,
+        rng=rng_selected,
+    )
+    expected = build_sitl_identification_reference_v4(state0, 24.0, 1.0e-3, rng_expected)
     npt.assert_allclose(selected, expected)
