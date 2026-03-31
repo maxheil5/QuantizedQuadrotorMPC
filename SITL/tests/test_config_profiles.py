@@ -81,7 +81,7 @@ def test_sitl_identification_runtime_config_preserves_known_good_baseline():
     config = load_runtime_config(Path("SITL/configs/sitl_runtime_identification.yaml"))
     assert config.controller_mode == "baseline_geometric"
     assert config.quantization_mode == "none"
-    assert config.reference_mode == "sitl_identification_v4"
+    assert config.reference_mode == "sitl_identification_v5"
     assert config.reference_duration_s == 24.0
     assert config.vehicle_scaling.max_collective_thrust_newton == 62.0
     assert config.vehicle_scaling.max_body_torque_x_nm == 1.0
