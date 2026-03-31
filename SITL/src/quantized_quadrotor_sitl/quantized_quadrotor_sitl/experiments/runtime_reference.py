@@ -32,6 +32,44 @@ def _constant_segment(position: np.ndarray, sample_times: np.ndarray, t0: float,
         position[:, mask] = np.asarray(target, dtype=float).reshape(3, 1)
 
 
+def _yaw_rotation_matrix(yaw_angle: float) -> np.ndarray:
+    cos_yaw = float(np.cos(yaw_angle))
+    sin_yaw = float(np.sin(yaw_angle))
+    return np.array(
+        [
+            [cos_yaw, -sin_yaw, 0.0],
+            [sin_yaw, cos_yaw, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=float,
+    )
+
+
+def _initial_heading_angle(initial_state: np.ndarray) -> float:
+    rotation = np.asarray(initial_state[6:15], dtype=float).reshape(3, 3, order="F")
+    heading = rotation[:, 0].copy()
+    heading[2] = 0.0
+    heading_norm = float(np.linalg.norm(heading))
+    if heading_norm <= 1.0e-9:
+        return 0.0
+    heading /= heading_norm
+    return float(np.arctan2(heading[1], heading[0]))
+
+
+def _fill_velocity_reference(reference: np.ndarray, position: np.ndarray, sim_timestep: float) -> None:
+    if position.shape[1] <= 1:
+        reference[3:6, :] = 0.0
+        return
+    edge_order = 2 if position.shape[1] > 2 else 1
+    reference[3:6, :] = np.gradient(position, sim_timestep, axis=1, edge_order=edge_order)
+
+
+def _fill_heading_reference(reference: np.ndarray, heading_angles: np.ndarray) -> None:
+    headings = np.asarray(heading_angles, dtype=float).reshape(-1)
+    for idx, heading_angle in enumerate(headings):
+        reference[6:15, idx] = _yaw_rotation_matrix(float(heading_angle)).reshape(-1, order="F")
+
+
 def build_sitl_identification_reference(
     initial_state: np.ndarray,
     reference_duration_s: float,
@@ -130,6 +168,73 @@ def build_sitl_identification_reference(
     return reference
 
 
+def build_sitl_identification_reference_v2(
+    initial_state: np.ndarray,
+    reference_duration_s: float,
+    sim_timestep: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    state0 = np.asarray(initial_state, dtype=float).reshape(18)
+    sample_count = _reference_sample_count(reference_duration_s, sim_timestep)
+    sample_times = np.arange(sample_count, dtype=float) * sim_timestep
+
+    reference = np.repeat(state0[:, None], sample_count, axis=1)
+    reference[3:6, :] = 0.0
+    reference[15:18, :] = 0.0
+
+    x0, y0, z0 = state0[0:3]
+    hover_position = np.array([x0, y0, z0 + 0.75], dtype=float)
+    position = np.repeat(state0[0:3, None], sample_count, axis=1)
+    heading_profile = np.full(sample_count, _initial_heading_angle(state0), dtype=float)
+
+    _constant_segment(position, sample_times, 0.0, 2.0, np.array([x0, y0, z0], dtype=float))
+    _smooth_segment(position, sample_times, 2.0, 6.0, np.array([x0, y0, z0], dtype=float), hover_position)
+    _constant_segment(position, sample_times, 6.0, 8.0, hover_position)
+
+    x_sign = float(rng.choice(np.array([-1.0, 1.0], dtype=float)))
+    y_sign = float(rng.choice(np.array([-1.0, 1.0], dtype=float)))
+    z_sign = float(rng.choice(np.array([-1.0, 1.0], dtype=float)))
+
+    vertical_mask = (sample_times >= 8.0) & (sample_times < 12.0)
+    if np.any(vertical_mask):
+        vertical_time = sample_times[vertical_mask] - 8.0
+        position[0, vertical_mask] = x0
+        position[1, vertical_mask] = y0
+        position[2, vertical_mask] = (
+            z0
+            + 0.75
+            + z_sign * 0.10 * np.sin(2.0 * np.pi * vertical_time / 4.0)
+            + 0.04 * np.sin(6.0 * np.pi * vertical_time / 4.0)
+        )
+
+    x_sweep_mask = (sample_times >= 12.0) & (sample_times < 16.0)
+    if np.any(x_sweep_mask):
+        x_time = sample_times[x_sweep_mask] - 12.0
+        position[0, x_sweep_mask] = x0 + x_sign * 0.28 * np.sin(2.0 * np.pi * x_time / 4.0)
+        position[1, x_sweep_mask] = y0 + y_sign * 0.06 * np.sin(4.0 * np.pi * x_time / 4.0)
+        position[2, x_sweep_mask] = z0 + 0.75 + 0.04 * np.sin(4.0 * np.pi * x_time / 4.0)
+
+    y_sweep_mask = (sample_times >= 16.0) & (sample_times < 20.0)
+    if np.any(y_sweep_mask):
+        y_time = sample_times[y_sweep_mask] - 16.0
+        position[0, y_sweep_mask] = x0 + x_sign * 0.08 * np.sin(4.0 * np.pi * y_time / 4.0)
+        position[1, y_sweep_mask] = y0 + y_sign * 0.24 * np.sin(2.0 * np.pi * y_time / 4.0)
+        position[2, y_sweep_mask] = z0 + 0.75 + 0.05 * np.sin(2.0 * np.pi * y_time / 4.0)
+
+    figure_mask = sample_times >= 20.0
+    if np.any(figure_mask):
+        figure_time = sample_times[figure_mask] - 20.0
+        position[0, figure_mask] = x0 + x_sign * 0.30 * np.sin(2.0 * np.pi * figure_time / 4.0)
+        position[1, figure_mask] = y0 + y_sign * 0.22 * np.sin(4.0 * np.pi * figure_time / 4.0)
+        position[2, figure_mask] = z0 + 0.75 + 0.06 * np.sin(4.0 * np.pi * figure_time / 4.0)
+        heading_profile[figure_mask] += np.deg2rad(12.0) * np.sin(2.0 * np.pi * figure_time / 4.0)
+
+    reference[0:3, :] = position
+    _fill_velocity_reference(reference, position, sim_timestep)
+    _fill_heading_reference(reference, heading_profile)
+    return reference
+
+
 def build_hover_step_reference(
     initial_state: np.ndarray,
     reference_duration_s: float,
@@ -216,6 +321,8 @@ def build_runtime_reference(
         return build_takeoff_hold_reference(initial_state, reference_duration_s, sim_timestep)
     if reference_mode == "sitl_identification_v1":
         return build_sitl_identification_reference(initial_state, reference_duration_s, sim_timestep, rng)
+    if reference_mode == "sitl_identification_v2":
+        return build_sitl_identification_reference_v2(initial_state, reference_duration_s, sim_timestep, rng)
     if reference_mode == "hover_step":
         return build_hover_step_reference(initial_state, reference_duration_s, sim_timestep)
     if reference_mode == "paper_random":

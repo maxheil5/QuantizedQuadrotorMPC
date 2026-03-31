@@ -7,7 +7,7 @@ controller_mode: baseline_geometric
 model_artifact: results/offline/hover_local_v1/latest/edmd_unquantized.npz
 quantization_mode: none
 quantized_word_length: 12
-reference_mode: sitl_identification_v1
+reference_mode: sitl_identification_v2
 reference_seed: 2141444
 reference_duration_s: 24.0
 state_topic: /quantized_mpc/state18
