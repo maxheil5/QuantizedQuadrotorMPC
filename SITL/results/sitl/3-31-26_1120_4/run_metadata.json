@@ -1,0 +1,60 @@
+{
+  "baseline": {
+    "angular_rate_gains_diag": [
+      0.25,
+      0.25,
+      0.15
+    ],
+    "attitude_gains_diag": [
+      2.5,
+      2.5,
+      0.8
+    ],
+    "max_tilt_deg": 12.0,
+    "position_gains_diag": [
+      0.5,
+      0.5,
+      5.5
+    ],
+    "velocity_gains_diag": [
+      0.8,
+      0.8,
+      3.0
+    ],
+    "z_integral_gain": 1.2,
+    "z_integral_limit": 1.5
+  },
+  "controller_mode": "baseline_geometric",
+  "initial_state": [
+    -0.010927412658929825,
+    -0.0006517196889035404,
+    -0.016258448362350464,
+    -0.002177634509280324,
+    -0.01397771667689085,
+    -0.007758076768368483,
+    0.9945619401786322,
+    -0.10414819672877074,
+    -4.381568842772715e-06,
+    0.10414817125579923,
+    0.9945616656865847,
+    0.0007425117709570841,
+    -7.297341089496784e-05,
+    -0.000738930179014028,
+    0.9999997243285353,
+    0.0014982303837314248,
+    -0.00013057772594038397,
+    0.00026513476041145623
+  ],
+  "model_artifact": "results/offline/hover_local_v1/latest/edmd_unquantized.npz",
+  "quantization_mode": "none",
+  "reference_duration_s": 24.0,
+  "reference_mode": "sitl_identification_v3",
+  "reference_sample_count": 24000,
+  "reference_seed": 2141444,
+  "vehicle_scaling": {
+    "max_body_torque_x_nm": 1.0,
+    "max_body_torque_y_nm": 1.0,
+    "max_body_torque_z_nm": 0.6,
+    "max_collective_thrust_newton": 62.0
+  }
+}
