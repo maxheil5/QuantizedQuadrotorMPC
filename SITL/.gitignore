@@ -4,10 +4,9 @@ install/
 log/
 logs/*
 !logs/.gitkeep
-results/*
-!results/.gitkeep
+results/**
+!results/
 !results/**/
-results/**/*
 !results/**/.gitkeep
 artifacts/*
 !artifacts/.gitkeep
