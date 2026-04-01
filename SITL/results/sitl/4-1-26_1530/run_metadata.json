@@ -1,0 +1,60 @@
+{
+  "baseline": {
+    "angular_rate_gains_diag": [
+      0.25,
+      0.25,
+      0.15
+    ],
+    "attitude_gains_diag": [
+      2.5,
+      2.5,
+      0.8
+    ],
+    "max_tilt_deg": 12.0,
+    "position_gains_diag": [
+      0.5,
+      0.5,
+      5.5
+    ],
+    "velocity_gains_diag": [
+      0.8,
+      0.8,
+      3.0
+    ],
+    "z_integral_gain": 1.2,
+    "z_integral_limit": 1.5
+  },
+  "controller_mode": "edmd_mpc",
+  "initial_state": [
+    -0.005658692680299282,
+    -0.025395939126610756,
+    0.0013502836227416992,
+    -0.02542519010603428,
+    -0.007717774715274572,
+    -0.005873988848179579,
+    0.9945917511145687,
+    -0.10385193574943163,
+    0.0014445503348485544,
+    0.10385214743382587,
+    0.9945927754330918,
+    -7.210695085038688e-05,
+    -0.001429250841838009,
+    0.00022173658556348674,
+    0.9999989540369415,
+    -1.0662333806976676e-06,
+    -0.000948188710026443,
+    0.00019739581330213696
+  ],
+  "model_artifact": "results/offline/sitl_baseline_v1/latest/edmd_unquantized.npz",
+  "quantization_mode": "none",
+  "reference_duration_s": 10.0,
+  "reference_mode": "takeoff_hold",
+  "reference_sample_count": 10000,
+  "reference_seed": 2141444,
+  "vehicle_scaling": {
+    "max_body_torque_x_nm": 1.0,
+    "max_body_torque_y_nm": 1.0,
+    "max_body_torque_z_nm": 0.6,
+    "max_collective_thrust_newton": 62.0
+  }
+}
