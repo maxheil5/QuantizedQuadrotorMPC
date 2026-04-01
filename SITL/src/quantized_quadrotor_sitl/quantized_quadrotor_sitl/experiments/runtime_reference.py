@@ -599,6 +599,109 @@ def build_sitl_identification_reference_v6(
     return reference
 
 
+def build_sitl_identification_reference_v7(
+    initial_state: np.ndarray,
+    reference_duration_s: float,
+    sim_timestep: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    _ = rng
+    state0 = np.asarray(initial_state, dtype=float).reshape(18)
+    sample_count = _reference_sample_count(reference_duration_s, sim_timestep)
+    sample_times = np.arange(sample_count, dtype=float) * sim_timestep
+
+    reference = np.repeat(state0[:, None], sample_count, axis=1)
+    reference[3:6, :] = 0.0
+    reference[15:18, :] = 0.0
+
+    x0, y0, z0 = state0[0:3]
+    initial_heading = _initial_heading_angle(state0)
+    hover_position = np.array([x0, y0, z0 + 0.75], dtype=float)
+    position = np.repeat(state0[0:3, None], sample_count, axis=1)
+    heading_profile = np.full(sample_count, initial_heading, dtype=float)
+
+    _constant_segment(position, sample_times, 0.0, 2.0, np.array([x0, y0, z0], dtype=float))
+    _smooth_segment(position, sample_times, 2.0, 5.5, np.array([x0, y0, z0], dtype=float), hover_position)
+    _constant_segment(position, sample_times, 5.5, 7.0, hover_position)
+
+    mask, tau, envelope = _windowed_segment_profile(sample_times, 7.0, 11.0)
+    if np.any(mask):
+        x_offset_local = envelope * (
+            0.52 * np.sin(4.0 * np.pi * tau + 0.20)
+            + 0.14 * np.sin(12.0 * np.pi * tau + 0.55)
+            + 0.04 * np.sin(16.0 * np.pi * tau + 0.10)
+        )
+        y_offset_local = envelope * (0.10 * np.sin(8.0 * np.pi * tau - 0.15) + 0.04 * np.sin(4.0 * np.pi * tau + 0.50))
+        x_offset_world, y_offset_world = _rotate_planar_offsets(x_offset_local, y_offset_local, initial_heading)
+        position[0, mask] = x0 + x_offset_world
+        position[1, mask] = y0 + y_offset_world
+        position[2, mask] = hover_position[2] + envelope * (
+            0.06 * np.sin(4.0 * np.pi * tau + 0.60) + 0.025 * np.sin(12.0 * np.pi * tau + 0.15)
+        )
+        heading_profile[mask] = initial_heading + np.deg2rad(7.0) * envelope * np.sin(4.0 * np.pi * tau + 0.25)
+
+    forward_times = np.array([11.0, 12.0, 13.0, 14.2, 15.2, 16.1, 17.0], dtype=float)
+    forward_points_local = [
+        np.array([0.0, 0.0, 0.75], dtype=float),
+        np.array([0.60, 0.10, 0.80], dtype=float),
+        np.array([-0.60, -0.10, 0.69], dtype=float),
+        np.array([0.50, 0.08, 0.80], dtype=float),
+        np.array([-0.50, -0.08, 0.70], dtype=float),
+        np.array([0.26, 0.04, 0.77], dtype=float),
+        np.array([0.0, 0.0, 0.75], dtype=float),
+    ]
+    for idx in range(forward_times.size - 1):
+        start_local = forward_points_local[idx]
+        end_local = forward_points_local[idx + 1]
+        start_xy = np.array(_rotate_planar_offsets(start_local[0], start_local[1], initial_heading), dtype=float)
+        end_xy = np.array(_rotate_planar_offsets(end_local[0], end_local[1], initial_heading), dtype=float)
+        start_world = np.array([x0 + start_xy[0], y0 + start_xy[1], z0 + start_local[2]], dtype=float)
+        end_world = np.array([x0 + end_xy[0], y0 + end_xy[1], z0 + end_local[2]], dtype=float)
+        _smooth_segment(
+            position,
+            sample_times,
+            float(forward_times[idx]),
+            float(forward_times[idx + 1]),
+            start_world,
+            end_world,
+        )
+
+    mask, tau, envelope = _windowed_segment_profile(sample_times, 17.0, 20.5)
+    if np.any(mask):
+        x_offset_local = envelope * (
+            0.56 * np.sin(4.0 * np.pi * tau + 0.18)
+            + 0.16 * np.sin(12.0 * np.pi * tau + 0.42)
+            + 0.05 * np.sin(16.0 * np.pi * tau + 0.30)
+        )
+        y_offset_local = envelope * (0.11 * np.sin(8.0 * np.pi * tau - 0.10) + 0.04 * np.sin(4.0 * np.pi * tau + 0.70))
+        x_offset_world, y_offset_world = _rotate_planar_offsets(x_offset_local, y_offset_local, initial_heading)
+        position[0, mask] = x0 + x_offset_world
+        position[1, mask] = y0 + y_offset_world
+        position[2, mask] = hover_position[2] + envelope * (
+            0.055 * np.sin(4.0 * np.pi * tau + 0.85) + 0.025 * np.sin(12.0 * np.pi * tau + 0.20)
+        )
+        heading_profile[mask] = initial_heading - np.deg2rad(6.0) * envelope * np.sin(4.0 * np.pi * tau + 0.15)
+
+    mask, tau, envelope = _windowed_segment_profile(sample_times, 20.5, 24.0)
+    if np.any(mask):
+        x_offset_local = envelope * (
+            0.44 * np.cos(4.0 * np.pi * tau + 0.05) - 0.12 * np.cos(12.0 * np.pi * tau + 0.35)
+        )
+        y_offset_local = envelope * (0.22 * np.sin(4.0 * np.pi * tau + 0.15) + 0.08 * np.sin(12.0 * np.pi * tau + 0.50))
+        x_offset_world, y_offset_world = _rotate_planar_offsets(x_offset_local, y_offset_local, initial_heading)
+        position[0, mask] = x0 + x_offset_world
+        position[1, mask] = y0 + y_offset_world
+        position[2, mask] = hover_position[2] + envelope * (
+            0.05 * np.sin(4.0 * np.pi * tau + 0.80) + 0.02 * np.sin(12.0 * np.pi * tau + 0.40)
+        )
+        heading_profile[mask] = initial_heading + np.deg2rad(14.0) * envelope * np.sin(6.0 * np.pi * tau + 0.35)
+
+    reference[0:3, :] = position
+    _fill_velocity_reference(reference, position, sim_timestep)
+    _fill_heading_reference(reference, heading_profile)
+    return reference
+
+
 def build_hover_step_reference(
     initial_state: np.ndarray,
     reference_duration_s: float,
@@ -695,6 +798,8 @@ def build_runtime_reference(
         return build_sitl_identification_reference_v5(initial_state, reference_duration_s, sim_timestep, rng)
     if reference_mode == "sitl_identification_v6":
         return build_sitl_identification_reference_v6(initial_state, reference_duration_s, sim_timestep, rng)
+    if reference_mode == "sitl_identification_v7":
+        return build_sitl_identification_reference_v7(initial_state, reference_duration_s, sim_timestep, rng)
     if reference_mode == "hover_step":
         return build_hover_step_reference(initial_state, reference_duration_s, sim_timestep)
     if reference_mode == "paper_random":

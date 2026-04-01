@@ -4,7 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_PATH="${ROOT_DIR}/configs/sitl_runtime_identification.yaml"
 PACKAGE_CONFIG_PATH="${ROOT_DIR}/src/quantized_quadrotor_sitl/config/runtime_identification.yaml"
-RUN_TIMEOUT_SECONDS="${SITL_RUN_TIMEOUT_SECONDS:-180}"
+RUN_TIMEOUT_SECONDS="${SITL_RUN_TIMEOUT_SECONDS:-90}"
+KILL_AFTER_SECONDS="${SITL_KILL_AFTER_SECONDS:-10}"
+CLEANUP_WAIT_SECONDS="${SITL_CLEANUP_WAIT_SECONDS:-1}"
 
 if [[ ! -f "${CONFIG_PATH}" ]]; then
   echo "Missing config: ${CONFIG_PATH}" >&2
@@ -32,8 +34,8 @@ for seed in "${SEEDS[@]}"; do
   echo "=== Running SITL identification seed ${seed} ==="
   sed -i "s/^reference_seed: .*/reference_seed: ${seed}/" "${CONFIG_PATH}" "${PACKAGE_CONFIG_PATH}"
   cleanup_sitl_processes
-  sleep 2
-  if timeout --signal=INT --kill-after=15 "${RUN_TIMEOUT_SECONDS}" bash "${ROOT_DIR}/scripts/run_sitl_experiment.sh" "${CONFIG_PATH}"; then
+  sleep "${CLEANUP_WAIT_SECONDS}"
+  if timeout --signal=INT --kill-after="${KILL_AFTER_SECONDS}" "${RUN_TIMEOUT_SECONDS}" bash "${ROOT_DIR}/scripts/run_sitl_experiment.sh" "${CONFIG_PATH}"; then
     echo "=== Seed ${seed} completed ==="
   else
     status=$?
@@ -46,5 +48,5 @@ for seed in "${SEEDS[@]}"; do
     fi
   fi
   cleanup_sitl_processes
-  sleep 2
+  sleep "${CLEANUP_WAIT_SECONDS}"
 done
