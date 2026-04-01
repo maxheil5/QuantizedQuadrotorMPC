@@ -23,6 +23,7 @@ class MPCConfig:
     attitude_error_weight: float = 1.0e2
     angular_velocity_error_weight: float = 1.0e2
     control_weights_diag: list[float] = field(default_factory=lambda: [1.0e-6, 1.0, 1.0, 1.0])
+    control_delta_weights_diag: list[float] = field(default_factory=lambda: [1.0, 6.0, 6.0, 8.0])
 
     @property
     def max_iter(self) -> int:
@@ -36,6 +37,9 @@ class MPCConfig:
 
     def control_weights(self) -> FloatArray:
         return np.asarray(self.control_weights_diag, dtype=float).reshape(4)
+
+    def control_delta_weights(self) -> FloatArray:
+        return np.asarray(self.control_delta_weights_diag, dtype=float).reshape(4)
 
 
 @dataclass(slots=True)

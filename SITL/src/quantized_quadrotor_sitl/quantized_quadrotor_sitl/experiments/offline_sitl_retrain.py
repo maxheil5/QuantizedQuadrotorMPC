@@ -11,7 +11,7 @@ from ..utils.io import create_run_directory, save_npz, write_csv, write_json
 from .sitl_dataset import (
     build_sitl_edmd_snapshots,
     compute_sitl_run_diagnostics,
-    evaluate_model_on_sitl_run,
+    evaluate_model_on_sitl_run_with_controls,
     excitation_warnings_from_diagnostics,
     load_sitl_run_dataset,
 )
@@ -39,7 +39,14 @@ def run_sitl_retrain(
     train_datasets = [load_sitl_run_dataset(path, state_source=state_source, control_source=control_source) for path in train_runs]
     eval_datasets = [load_sitl_run_dataset(path, state_source=state_source, control_source=control_source) for path in eval_runs]
     x_history, u_history, x1_history, x2_history, u1_history = build_sitl_edmd_snapshots(train_datasets)
-    model = get_edmd(x1_history, x2_history, u1_history, n_basis)
+    u_train_min = np.min(u1_history, axis=1, keepdims=True)
+    u_train_max = np.max(u1_history, axis=1, keepdims=True)
+    u_train_mean = np.mean(u1_history, axis=1, keepdims=True)
+    u_train_std = np.std(u1_history, axis=1, keepdims=True)
+    u_trim = u_train_mean.copy()
+    u_scale = np.maximum(u_train_std, 1.0e-6)
+    u1_internal = (u1_history - u_trim) / u_scale
+    model = get_edmd(x1_history, x2_history, u1_internal, n_basis)
 
     artifact_path = output_dir / "edmd_unquantized.npz"
     save_npz(
@@ -52,8 +59,11 @@ def run_sitl_retrain(
         n_basis=np.array([model.n_basis]),
         x_train_min=np.min(x_history, axis=1, keepdims=True),
         x_train_max=np.max(x_history, axis=1, keepdims=True),
-        u_train_min=np.min(u1_history, axis=1, keepdims=True),
-        u_train_max=np.max(u1_history, axis=1, keepdims=True),
+        u_train_min=u_train_min,
+        u_train_max=u_train_max,
+        u_train_mean=u_train_mean,
+        u_train_std=u_train_std,
+        u_trim=u_trim,
     )
 
     metrics_rows: list[dict[str, object]] = []
@@ -61,7 +71,7 @@ def run_sitl_retrain(
     eval_diagnostics = [compute_sitl_run_diagnostics(dataset) for dataset in (eval_datasets if eval_datasets else train_datasets)]
     for split_name, datasets in (("train", train_datasets), ("eval", eval_datasets if eval_datasets else train_datasets)):
         for dataset in datasets:
-            scores = evaluate_model_on_sitl_run(dataset, model)
+            scores = evaluate_model_on_sitl_run_with_controls(dataset, model, control_trim=u_trim, control_scale=u_scale)
             diagnostics = compute_sitl_run_diagnostics(dataset)
             metrics_rows.append(
                 {
@@ -119,6 +129,9 @@ def run_sitl_retrain(
             "state_source": state_source,
             "control_source": control_source,
             "n_basis": n_basis,
+            "u_train_mean": u_train_mean.reshape(-1).tolist(),
+            "u_train_std": u_train_std.reshape(-1).tolist(),
+            "u_trim": u_trim.reshape(-1).tolist(),
             "excitation_thresholds": excitation_thresholds,
             "warnings": warnings,
             "train_diagnostics": train_diagnostics,

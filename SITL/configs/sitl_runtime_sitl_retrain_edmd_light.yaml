@@ -46,3 +46,4 @@ mpc:
   attitude_error_weight: 100.0
   angular_velocity_error_weight: 150.0
   control_weights_diag: [1.0e-5, 40.0, 40.0, 60.0]
+  control_delta_weights_diag: [1.0, 6.0, 6.0, 8.0]

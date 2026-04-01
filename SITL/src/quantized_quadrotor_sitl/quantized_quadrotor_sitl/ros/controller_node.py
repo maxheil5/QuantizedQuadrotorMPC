@@ -25,7 +25,7 @@ from ..mpc.simulate import solve_qp
 from ..quantization.dither import dither_signal
 from ..quantization.partition import partition_range
 from ..telemetry.adapter import physical_control_to_px4_wrench
-from ..utils.control_bounds import runtime_edmd_control_bounds
+from ..utils.control_bounds import RuntimeControlCoordinates, runtime_edmd_control_coordinates
 from ..utils.io import create_sitl_results_directory, write_json
 from .offboard import offboard_control_mode_msg
 
@@ -47,15 +47,32 @@ class ControllerNode(Node):
         self.params = get_params()
         self.model = None
         self.metadata: dict[str, np.ndarray] = {}
+        self.control_coordinates: RuntimeControlCoordinates | None = None
         if self.config.controller_mode == "edmd_mpc":
             self.model, self.metadata = load_edmd_artifact(self._resolve_path(self.config.model_artifact))
+            self.control_coordinates = runtime_edmd_control_coordinates(self.config.vehicle_scaling, self.metadata)
             self.get_logger().info(
                 f"Using controller mode '{self.config.controller_mode}' with artifact {self.config.model_artifact}"
             )
-            control_lower_bounds, _ = runtime_edmd_control_bounds(self.config.vehicle_scaling, self.metadata)
-            if control_lower_bounds[0] > self.config.vehicle_scaling.control_lower_bounds()[0]:
+            if self.control_coordinates.normalized:
                 self.get_logger().info(
-                    f"Using learned collective floor {control_lower_bounds[0]:.2f} N from artifact metadata."
+                    "Using trim-centered normalized EDMD controls with "
+                    f"u_trim={np.array2string(self.control_coordinates.trim, precision=3)}, "
+                    f"u_train_std={np.array2string(self.control_coordinates.scale, precision=3)}."
+                )
+                self.get_logger().info(
+                    "Effective physical control bounds "
+                    f"{np.array2string(self.control_coordinates.physical_lower_bounds, precision=3)} to "
+                    f"{np.array2string(self.control_coordinates.physical_upper_bounds, precision=3)}."
+                )
+                self.get_logger().info(
+                    "Effective normalized control bounds "
+                    f"{np.array2string(self.control_coordinates.internal_lower_bounds, precision=3)} to "
+                    f"{np.array2string(self.control_coordinates.internal_upper_bounds, precision=3)}."
+                )
+            elif self.control_coordinates.physical_lower_bounds[0] > self.config.vehicle_scaling.control_lower_bounds()[0]:
+                self.get_logger().info(
+                    f"Using learned collective floor {self.control_coordinates.physical_lower_bounds[0]:.2f} N from artifact metadata."
                 )
         elif self.config.controller_mode == "baseline_geometric":
             self.get_logger().info(
@@ -77,6 +94,7 @@ class ControllerNode(Node):
         self.last_active_tick_ns: int | None = None
         self.shutdown_requested = False
         self.baseline_z_error_integral = 0.0
+        self.previous_control_internal = np.zeros(4, dtype=float)
         px4_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -142,6 +160,7 @@ class ControllerNode(Node):
                 *[f"state_raw_{idx}" for idx in range(18)],
                 *[f"state_used_{idx}" for idx in range(18)],
                 *[f"control_raw_{idx}" for idx in range(4)],
+                *[f"control_internal_{idx}" for idx in range(4)],
                 *[f"control_used_{idx}" for idx in range(4)],
                 *[f"reference_{idx}" for idx in range(18)],
             ]
@@ -197,6 +216,16 @@ class ControllerNode(Node):
             "baseline": asdict(self.config.baseline),
             "vehicle_scaling": asdict(self.config.vehicle_scaling),
         }
+        if self.control_coordinates is not None:
+            payload["control_coordinates"] = {
+                "normalized": bool(self.control_coordinates.normalized),
+                "trim": self.control_coordinates.trim.tolist(),
+                "scale": self.control_coordinates.scale.tolist(),
+                "physical_lower_bounds": self.control_coordinates.physical_lower_bounds.tolist(),
+                "physical_upper_bounds": self.control_coordinates.physical_upper_bounds.tolist(),
+                "internal_lower_bounds": self.control_coordinates.internal_lower_bounds.tolist(),
+                "internal_upper_bounds": self.control_coordinates.internal_upper_bounds.tolist(),
+            }
         if initial_state is not None:
             payload["initial_state"] = np.asarray(initial_state, dtype=float).reshape(18).tolist()
         if self.reference_sample_count > 0:
@@ -266,6 +295,7 @@ class ControllerNode(Node):
         if self.flight_phase in {FlightPhase.COMPLETED, FlightPhase.FAILED}:
             return
         self.flight_phase = phase
+        self.previous_control_internal = np.zeros(4, dtype=float)
         self._log_stream.flush()
         if phase == FlightPhase.FAILED:
             self.get_logger().error(message)
@@ -332,6 +362,7 @@ class ControllerNode(Node):
                 self.experiment_start_ns = now_ns
                 self.last_active_tick_ns = None
                 self.baseline_z_error_integral = 0.0
+                self.previous_control_internal = np.zeros(4, dtype=float)
             else:
                 retry_cycles = max(1, self.config.arm_retry_cycles)
                 if self.arm_retry_counter % retry_cycles == 0:
@@ -368,26 +399,33 @@ class ControllerNode(Node):
         reference_row = self.reference_physical[:, reference_index]
         if self.config.controller_mode == "edmd_mpc":
             assert self.model is not None
+            assert self.control_coordinates is not None
             lifted_state = lift_state(state_used, self.model.n_basis)
             lifted_reference = self._reference_window(reference_index)
             solver_start = perf_counter()
-            control_lower_bounds, control_upper_bounds = runtime_edmd_control_bounds(self.config.vehicle_scaling, self.metadata)
             f_vector, g_matrix, a_ineq, b_ineq = get_qp(
                 self.model,
                 lifted_state,
                 lifted_reference,
                 self.config.mpc.pred_horizon,
                 self.config.mpc,
-                control_lower_bounds,
-                control_upper_bounds,
+                self.control_coordinates.internal_lower_bounds,
+                self.control_coordinates.internal_upper_bounds,
+                previous_control=self.previous_control_internal,
             )
             solution = solve_qp(f_vector, g_matrix, a_ineq, b_ineq)
             solver_ms = (perf_counter() - solver_start) * 1000.0
 
-            control_raw = solution[:4]
+            control_internal = solution[:4]
+            control_raw = self.control_coordinates.internal_to_physical(control_internal)
             control_used = control_raw.copy()
             if self.config.quantization_mode in {"control", "both"} and self.metadata:
                 control_used = self._quantize_vector(control_used, "u_train_min", "u_train_max")
+            self.previous_control_internal = np.clip(
+                self.control_coordinates.physical_to_internal(control_used),
+                self.control_coordinates.internal_lower_bounds,
+                self.control_coordinates.internal_upper_bounds,
+            )
         else:
             z_error = float(reference_row[2] - state_used[2])
             self.baseline_z_error_integral += z_error * tick_dt_s
@@ -408,6 +446,7 @@ class ControllerNode(Node):
                 self.params,
             )
             solver_ms = (perf_counter() - solver_start) * 1000.0
+            control_internal = control_raw.copy()
 
         px4_collective_command_newton, px4_collective_normalized, px4_thrust_body_z = self._publish_wrench(control_used)
 
@@ -441,6 +480,7 @@ class ControllerNode(Node):
                 *state_raw.tolist(),
                 *state_used.tolist(),
                 *control_raw.tolist(),
+                *control_internal.tolist(),
                 *control_used.tolist(),
                 *reference_row.tolist(),
             ]

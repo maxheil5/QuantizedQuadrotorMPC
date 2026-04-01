@@ -87,11 +87,23 @@ def build_sitl_edmd_snapshots(
 
 
 def evaluate_model_on_sitl_run(run: SITLRunDataset, model: EDMDModel) -> RMSEBreakdown:
+    return evaluate_model_on_sitl_run_with_controls(run, model)
+
+
+def evaluate_model_on_sitl_run_with_controls(
+    run: SITLRunDataset,
+    model: EDMDModel,
+    control_trim: np.ndarray | None = None,
+    control_scale: np.ndarray | None = None,
+) -> RMSEBreakdown:
     predicted_columns: list[np.ndarray] = []
     reference_columns: list[np.ndarray] = []
+    trim = np.zeros(4, dtype=float) if control_trim is None else np.asarray(control_trim, dtype=float).reshape(4)
+    scale = np.ones(4, dtype=float) if control_scale is None else np.maximum(np.asarray(control_scale, dtype=float).reshape(4), 1.0e-6)
     for idx in range(run.pair_count):
         lifted_state = lift_state(run.state_history[:, idx], model.n_basis)
-        predicted_lifted = model.A @ lifted_state + model.B @ run.control_history[:, idx]
+        control_internal = (run.control_history[:, idx] - trim) / scale
+        predicted_lifted = model.A @ lifted_state + model.B @ control_internal
         predicted_columns.append(model.C @ predicted_lifted)
         reference_columns.append(encode_state24_from_state18(run.state_history[:, idx + 1]))
     return rmse(np.column_stack(predicted_columns), np.column_stack(reference_columns))

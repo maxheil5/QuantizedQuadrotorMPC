@@ -37,4 +37,3 @@ def get_edmd(x1: FloatArray, x2: FloatArray, u1: FloatArray, n_basis: int) -> ED
         Z2=z2,
         n_basis=n_basis,
     )
-

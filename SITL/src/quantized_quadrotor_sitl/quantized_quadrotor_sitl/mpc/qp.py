@@ -21,6 +21,7 @@ def get_qp(
     config: MPCConfig,
     control_lower_bounds: FloatArray | None = None,
     control_upper_bounds: FloatArray | None = None,
+    previous_control: FloatArray | None = None,
 ) -> tuple[FloatArray, FloatArray, sparse.csc_matrix, FloatArray]:
     a_matrix = model.A
     b_matrix = model.B
@@ -53,6 +54,8 @@ def get_qp(
     q_hat_blocks[-1] = p_terminal
     q_hat = block_diag(*q_hat_blocks)
     r_hat = block_diag(*[r_i for _ in range(horizon)])
+    s_i = np.diag(config.control_delta_weights())
+    s_hat = block_diag(*[s_i for _ in range(horizon)])
 
     b_hat = np.zeros((n_state * horizon, n_input * horizon), dtype=float)
     for row in range(horizon):
@@ -74,6 +77,11 @@ def get_qp(
     else:
         control_upper_bounds = np.asarray(control_upper_bounds, dtype=float).reshape(n_input)
 
+    if previous_control is None:
+        previous_control = np.zeros(n_input, dtype=float)
+    else:
+        previous_control = np.asarray(previous_control, dtype=float).reshape(n_input)
+
     a_ineq_i = np.kron(np.eye(n_input), np.array([[-1.0], [1.0]], dtype=float))
     a_ineq = block_diag(*[a_ineq_i for _ in range(horizon)])
     b_ineq_i = np.empty(2 * n_input, dtype=float)
@@ -85,6 +93,19 @@ def get_qp(
     g_matrix = 2.0 * (r_hat + b_hat.T @ q_hat @ b_hat)
     y_vector = lifted_reference.reshape(-1, order="F")
     f_vector = 2.0 * b_hat.T @ q_hat @ (a_hat @ lifted_state - y_vector)
+
+    delta_matrix = np.zeros((n_input * horizon, n_input * horizon), dtype=float)
+    for step in range(horizon):
+        row = step * n_input
+        col = step * n_input
+        delta_matrix[row : row + n_input, col : col + n_input] = np.eye(n_input, dtype=float)
+        if step > 0:
+            prev_col = (step - 1) * n_input
+            delta_matrix[row : row + n_input, prev_col : prev_col + n_input] = -np.eye(n_input, dtype=float)
+    delta_offset = np.zeros(n_input * horizon, dtype=float)
+    delta_offset[:n_input] = previous_control
+    g_matrix += 2.0 * (delta_matrix.T @ s_hat @ delta_matrix)
+    f_vector += -2.0 * (delta_matrix.T @ s_hat @ delta_offset)
 
     return (
         f_vector,

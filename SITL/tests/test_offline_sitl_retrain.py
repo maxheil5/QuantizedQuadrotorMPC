@@ -4,6 +4,9 @@ import csv
 import json
 from pathlib import Path
 
+import numpy as np
+
+from quantized_quadrotor_sitl.core.artifacts import load_edmd_artifact
 from quantized_quadrotor_sitl.experiments.offline_sitl_retrain import run_sitl_retrain
 
 
@@ -110,8 +113,38 @@ def test_run_sitl_retrain_writes_excitation_diagnostics_and_warning(tmp_path: Pa
 
     summary = json.loads(output.summary_json.read_text())
     metrics_lines = output.metrics_csv.read_text().splitlines()
+    model, metadata = load_edmd_artifact(output.artifact_paths[0])
 
     assert summary["warnings"]
     assert any("below 1 N" in warning for warning in summary["warnings"])
     assert "control_0_std" in metrics_lines[0]
     assert "state_z_range" in metrics_lines[0]
+    assert model.B.shape[1] == 4
+    assert "u_train_mean" in metadata
+    assert "u_train_std" in metadata
+    assert "u_trim" in metadata
+    np.testing.assert_allclose(metadata["u_trim"], metadata["u_train_mean"])
+
+
+def test_load_edmd_artifact_remains_backward_compatible_with_legacy_metadata(tmp_path: Path):
+    artifact_path = tmp_path / "legacy_edmd_unquantized.npz"
+    np.savez(
+        artifact_path,
+        A=np.eye(4, dtype=float),
+        B=np.ones((4, 4), dtype=float),
+        C=np.eye(4, dtype=float),
+        Z1=np.zeros((4, 1), dtype=float),
+        Z2=np.zeros((4, 1), dtype=float),
+        n_basis=np.array([3]),
+        x_train_min=np.zeros((18, 1), dtype=float),
+        x_train_max=np.ones((18, 1), dtype=float),
+        u_train_min=np.zeros((4, 1), dtype=float),
+        u_train_max=np.ones((4, 1), dtype=float),
+    )
+
+    model, metadata = load_edmd_artifact(artifact_path)
+
+    assert model.n_basis == 3
+    assert "u_train_min" in metadata
+    assert "u_train_max" in metadata
+    assert "u_trim" not in metadata

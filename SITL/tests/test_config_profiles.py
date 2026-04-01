@@ -57,6 +57,7 @@ def test_runtime_config_includes_estimator_topic_defaults():
     assert config.mpc.attitude_error_weight == 100.0
     assert config.mpc.angular_velocity_error_weight == 150.0
     assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
+    assert config.mpc.control_delta_weights_diag == [1.0, 6.0, 6.0, 8.0]
     assert config.vehicle_odometry_topic == "/fmu/out/vehicle_odometry"
     assert config.vehicle_local_position_topic == "/fmu/out/vehicle_local_position"
     assert config.vehicle_attitude_topic == "/fmu/out/vehicle_attitude"
@@ -75,6 +76,7 @@ def test_sitl_retrained_edmd_runtime_config_preserves_baseline_scaling():
     assert config.vehicle_scaling.max_body_torque_z_nm == 0.6
     assert config.mpc.pred_horizon == 10
     assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
+    assert config.mpc.control_delta_weights_diag == [1.0, 6.0, 6.0, 8.0]
 
 
 def test_sitl_retrained_edmd_light_runtime_config_reduces_solver_load():
@@ -89,6 +91,7 @@ def test_sitl_retrained_edmd_light_runtime_config_reduces_solver_load():
     assert config.vehicle_scaling.max_body_torque_z_nm == 0.6
     assert config.mpc.pred_horizon == 8
     assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
+    assert config.mpc.control_delta_weights_diag == [1.0, 6.0, 6.0, 8.0]
 
 
 def test_sitl_identification_runtime_config_preserves_known_good_baseline():

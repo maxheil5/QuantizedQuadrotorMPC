@@ -22,4 +22,7 @@ def load_edmd_artifact(path: Path) -> tuple[EDMDModel, dict[str, np.ndarray]]:
         for key in ("x_train_min", "x_train_max", "u_train_min", "u_train_max")
         if key in payload
     }
+    for key in ("u_train_mean", "u_train_std", "u_trim"):
+        if key in payload:
+            metadata[key] = np.asarray(payload[key], dtype=float)
     return model, metadata
