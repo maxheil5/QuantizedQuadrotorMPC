@@ -21,11 +21,18 @@ else
   SEEDS=(2141444 2141445 2141446 2141447)
 fi
 
-for seed in "${SEEDS[@]}"; do
-  echo "=== Running SITL identification seed ${seed} ==="
-  sed -i "s/^reference_seed: .*/reference_seed: ${seed}/" "${CONFIG_PATH}" "${PACKAGE_CONFIG_PATH}"
+cleanup_sitl_processes() {
   pkill -f MicroXRCEAgent >/dev/null 2>&1 || true
   pkill -f px4 >/dev/null 2>&1 || true
   pkill -f "gz sim" >/dev/null 2>&1 || true
+}
+
+for seed in "${SEEDS[@]}"; do
+  echo "=== Running SITL identification seed ${seed} ==="
+  sed -i "s/^reference_seed: .*/reference_seed: ${seed}/" "${CONFIG_PATH}" "${PACKAGE_CONFIG_PATH}"
+  cleanup_sitl_processes
+  sleep 2
   bash "${ROOT_DIR}/scripts/run_sitl_experiment.sh" "${CONFIG_PATH}"
+  cleanup_sitl_processes
+  sleep 2
 done
