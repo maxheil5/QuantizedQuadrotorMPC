@@ -77,6 +77,20 @@ def test_sitl_retrained_edmd_runtime_config_preserves_baseline_scaling():
     assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
 
 
+def test_sitl_retrained_edmd_light_runtime_config_reduces_solver_load():
+    config = load_runtime_config(Path("SITL/configs/sitl_runtime_sitl_retrain_edmd_light.yaml"))
+    assert config.controller_mode == "edmd_mpc"
+    assert config.model_artifact == "results/offline/sitl_baseline_v1/latest/edmd_unquantized.npz"
+    assert config.reference_mode == "takeoff_hold"
+    assert config.control_rate_hz == 50.0
+    assert config.vehicle_scaling.max_collective_thrust_newton == 62.0
+    assert config.vehicle_scaling.max_body_torque_x_nm == 1.0
+    assert config.vehicle_scaling.max_body_torque_y_nm == 1.0
+    assert config.vehicle_scaling.max_body_torque_z_nm == 0.6
+    assert config.mpc.pred_horizon == 8
+    assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
+
+
 def test_sitl_identification_runtime_config_preserves_known_good_baseline():
     config = load_runtime_config(Path("SITL/configs/sitl_runtime_identification.yaml"))
     assert config.controller_mode == "baseline_geometric"
