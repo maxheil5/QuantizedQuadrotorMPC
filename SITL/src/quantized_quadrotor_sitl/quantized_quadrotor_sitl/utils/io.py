@@ -29,10 +29,13 @@ def round_datetime_to_nearest_minutes(value: datetime, minutes: int) -> datetime
     return rounded
 
 
-def format_sitl_run_name(value: datetime | None = None) -> str:
+def format_sitl_run_name(value: datetime | None = None, seed_suffix: int | None = None) -> str:
     current = value if value is not None else datetime.now().astimezone()
     rounded = round_datetime_to_nearest_minutes(current, 10)
-    return f"{rounded.month}-{rounded.day}-{rounded.year % 100:02d}_{rounded.hour:02d}{rounded.minute:02d}"
+    run_name = f"{rounded.month}-{rounded.day}-{rounded.year % 100:02d}_{rounded.hour:02d}{rounded.minute:02d}"
+    if seed_suffix is None:
+        return run_name
+    return f"{run_name}_{int(seed_suffix) % 10000:04d}"
 
 
 def _unique_path(path: Path) -> Path:
@@ -55,12 +58,16 @@ def _refresh_latest_symlink(latest_path: Path, run_dir: Path) -> None:
     latest_path.symlink_to(run_dir.name)
 
 
-def create_sitl_results_directory(results_dir: Path, timestamp: datetime | None = None) -> Path:
+def create_sitl_results_directory(
+    results_dir: Path,
+    timestamp: datetime | None = None,
+    seed_suffix: int | None = None,
+) -> Path:
     resolved = results_dir
     if resolved.name != "latest":
         return ensure_dir(resolved)
     root = ensure_dir(resolved.parent)
-    run_dir = ensure_dir(_unique_path(root / format_sitl_run_name(timestamp)))
+    run_dir = ensure_dir(_unique_path(root / format_sitl_run_name(timestamp, seed_suffix=seed_suffix)))
     _refresh_latest_symlink(root / "latest", run_dir)
     return run_dir
 

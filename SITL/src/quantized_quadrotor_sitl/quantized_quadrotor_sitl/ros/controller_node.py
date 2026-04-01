@@ -113,7 +113,11 @@ class ControllerNode(Node):
             px4_qos,
         )
 
-        results_dir = create_sitl_results_directory(self._resolve_path(self.config.results_dir))
+        run_seed_suffix = int(self.config.reference_seed) if self.config.reference_mode.startswith("sitl_identification") else None
+        results_dir = create_sitl_results_directory(
+            self._resolve_path(self.config.results_dir),
+            seed_suffix=run_seed_suffix,
+        )
         self.log_path = results_dir / "runtime_log.csv"
         self.metadata_path = results_dir / "run_metadata.json"
         self._log_stream = self.log_path.open("w", encoding="utf-8", newline="")
