@@ -12,6 +12,7 @@ from quantized_quadrotor_sitl.experiments.runtime_reference import (
     build_sitl_identification_reference_v3,
     build_sitl_identification_reference_v4,
     build_sitl_identification_reference_v5,
+    build_sitl_identification_reference_v6,
     build_takeoff_hold_reference,
     build_runtime_reference,
 )
@@ -272,4 +273,56 @@ def test_runtime_reference_selector_supports_sitl_identification_v5_mode():
         rng=rng_selected,
     )
     expected = build_sitl_identification_reference_v5(state0, 24.0, 1.0e-3, rng_expected)
+    npt.assert_allclose(selected, expected)
+
+
+def test_sitl_identification_reference_v6_is_deterministic_and_balanced_across_axes():
+    state0 = initial_state()
+    reference_a = build_sitl_identification_reference_v6(
+        state0,
+        reference_duration_s=24.0,
+        sim_timestep=1.0e-3,
+        rng=np.random.default_rng(2141444),
+    )
+    reference_b = build_sitl_identification_reference_v6(
+        state0,
+        reference_duration_s=24.0,
+        sim_timestep=1.0e-3,
+        rng=np.random.default_rng(2141447),
+    )
+
+    npt.assert_allclose(reference_a, reference_b)
+    assert reference_a.shape == (18, 24000)
+    assert np.min(reference_a[2, :]) >= state0[2] - 1.0e-9
+    assert np.max(reference_a[2, :]) <= state0[2] + 0.85 + 1.0e-9
+    assert np.min(reference_a[0, :]) >= state0[0] - 0.65 - 1.0e-9
+    assert np.max(reference_a[0, :]) <= state0[0] + 0.65 + 1.0e-9
+    assert np.min(reference_a[1, :]) >= state0[1] - 0.45 - 1.0e-9
+    assert np.max(reference_a[1, :]) <= state0[1] + 0.45 + 1.0e-9
+    assert np.max(np.abs(reference_a[3:6, :])) > 0.30
+    assert np.max(np.abs(reference_a[15:18, :])) <= 1.0e-9
+
+    x_range = float(np.max(reference_a[0, :]) - np.min(reference_a[0, :]))
+    y_range = float(np.max(reference_a[1, :]) - np.min(reference_a[1, :]))
+    assert x_range > 0.45
+    assert y_range > 0.30
+
+    rotation_history = reference_a[6:15, :].reshape(3, 3, -1, order="F")
+    determinants = np.linalg.det(np.moveaxis(rotation_history, 2, 0))
+    npt.assert_allclose(determinants, np.ones_like(determinants), atol=1.0e-6)
+    assert np.max(np.abs(reference_a[6:15, :] - np.repeat(state0[6:15, None], reference_a.shape[1], axis=1))) > 1.0e-3
+
+
+def test_runtime_reference_selector_supports_sitl_identification_v6_mode():
+    state0 = initial_state()
+    rng_selected = np.random.default_rng(2141444)
+    rng_expected = np.random.default_rng(2141444)
+    selected = build_runtime_reference(
+        state0,
+        reference_mode="sitl_identification_v6",
+        reference_duration_s=24.0,
+        sim_timestep=1.0e-3,
+        rng=rng_selected,
+    )
+    expected = build_sitl_identification_reference_v6(state0, 24.0, 1.0e-3, rng_expected)
     npt.assert_allclose(selected, expected)
