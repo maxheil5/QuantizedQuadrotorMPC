@@ -25,6 +25,7 @@ from ..mpc.simulate import solve_qp
 from ..quantization.dither import dither_signal
 from ..quantization.partition import partition_range
 from ..telemetry.adapter import physical_control_to_px4_wrench
+from ..utils.control_bounds import runtime_edmd_control_bounds
 from ..utils.io import create_sitl_results_directory, write_json
 from .offboard import offboard_control_mode_msg
 
@@ -51,6 +52,11 @@ class ControllerNode(Node):
             self.get_logger().info(
                 f"Using controller mode '{self.config.controller_mode}' with artifact {self.config.model_artifact}"
             )
+            control_lower_bounds, _ = runtime_edmd_control_bounds(self.config.vehicle_scaling, self.metadata)
+            if control_lower_bounds[0] > self.config.vehicle_scaling.control_lower_bounds()[0]:
+                self.get_logger().info(
+                    f"Using learned collective floor {control_lower_bounds[0]:.2f} N from artifact metadata."
+                )
         elif self.config.controller_mode == "baseline_geometric":
             self.get_logger().info(
                 "Using controller mode 'baseline_geometric' for a SITL-only hover sanity check."
@@ -365,14 +371,15 @@ class ControllerNode(Node):
             lifted_state = lift_state(state_used, self.model.n_basis)
             lifted_reference = self._reference_window(reference_index)
             solver_start = perf_counter()
+            control_lower_bounds, control_upper_bounds = runtime_edmd_control_bounds(self.config.vehicle_scaling, self.metadata)
             f_vector, g_matrix, a_ineq, b_ineq = get_qp(
                 self.model,
                 lifted_state,
                 lifted_reference,
                 self.config.mpc.pred_horizon,
                 self.config.mpc,
-                self.config.vehicle_scaling.control_lower_bounds(),
-                self.config.vehicle_scaling.control_upper_bounds(),
+                control_lower_bounds,
+                control_upper_bounds,
             )
             solution = solve_qp(f_vector, g_matrix, a_ineq, b_ineq)
             solver_ms = (perf_counter() - solver_start) * 1000.0
