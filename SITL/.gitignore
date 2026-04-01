@@ -6,6 +6,9 @@ logs/*
 !logs/.gitkeep
 results/*
 !results/.gitkeep
+!results/**/
+results/**/*
+!results/**/.gitkeep
 artifacts/*
 !artifacts/.gitkeep
 src/px4_msgs/
