@@ -10,7 +10,11 @@ import numpy as np
 from ..core.types import EDMDModel, RMSEBreakdown
 from ..edmd.basis import lift_state
 from ..utils.metrics import rmse
-from ..utils.state import encode_state24_from_state18
+from ..utils.state import (
+    encode_state24_from_state18,
+    state18_history_to_hover_local_residual,
+    takeoff_hold_trim_state18,
+)
 
 
 @dataclass(slots=True)
@@ -25,6 +29,8 @@ class SITLRunDataset:
     solver_ms: np.ndarray
     run_metadata: dict[str, object]
     control_internal_history: np.ndarray | None = None
+    residual_enabled: bool = False
+    state_trim: np.ndarray | None = None
 
     @property
     def sample_count(self) -> int:
@@ -80,6 +86,33 @@ def load_sitl_run_dataset(
         solver_ms=solver_ms,
         run_metadata=run_metadata,
         control_internal_history=control_internal_history,
+    )
+
+
+def takeoff_hold_trim_from_run(run: SITLRunDataset, hover_altitude_delta_m: float = 0.75) -> np.ndarray:
+    if run.sample_count <= 0:
+        raise ValueError(f"{run.run_name} does not contain any state samples")
+    return takeoff_hold_trim_state18(run.state_history[:, 0], hover_altitude_delta_m=hover_altitude_delta_m)
+
+
+def transform_sitl_run_dataset_to_hover_local_residual(
+    run: SITLRunDataset,
+    trim_state18: np.ndarray | None = None,
+) -> SITLRunDataset:
+    trim = takeoff_hold_trim_from_run(run) if trim_state18 is None else np.asarray(trim_state18, dtype=float).reshape(18)
+    return SITLRunDataset(
+        run_name=run.run_name,
+        log_path=run.log_path,
+        state_history=state18_history_to_hover_local_residual(run.state_history, trim),
+        control_history=run.control_history.copy(),
+        reference_history=state18_history_to_hover_local_residual(run.reference_history, trim),
+        experiment_time_s=run.experiment_time_s.copy(),
+        tick_dt_ms=run.tick_dt_ms.copy(),
+        solver_ms=run.solver_ms.copy(),
+        run_metadata=dict(run.run_metadata),
+        control_internal_history=None if run.control_internal_history is None else run.control_internal_history.copy(),
+        residual_enabled=True,
+        state_trim=trim,
     )
 
 

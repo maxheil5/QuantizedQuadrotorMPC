@@ -127,3 +127,27 @@ def test_evaluate_hover_gates_includes_drift_sidecar_metadata_when_present(tmp_p
 
     assert evaluation["diagnostic_branch"] == "Branch A"
     assert evaluation["dominant_drift_channel"] == "x"
+
+
+def test_evaluate_hover_gates_applies_light_residual_drift_checks(tmp_path: Path):
+    run_dir = tmp_path / "4-1-26_1900"
+    run_dir.mkdir(parents=True)
+    _write_runtime_log(run_dir / "runtime_log.csv", [0.0, 0.76, 0.80], [0.0, 0.20, 0.25], [0.0, 0.02, 0.04], 12.0, 20.0)
+    _write_run_metadata(run_dir / "run_metadata.json")
+    (run_dir / "drift_summary.json").write_text(
+        json.dumps(
+            {
+                "selected_branch": "Branch A",
+                "dominant_error_group": "x",
+                "early_window_rmse_ratio": {"x": 6.0, "dx": 2.5, "wb": 2.0},
+                "post_4s_internal_bound_fraction": {"u0": 0.10, "u1": 0.0, "u2": 0.0, "u3": 0.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evaluation = evaluate_hover_gates(run_dir / "runtime_log.csv", profile="light")
+
+    assert evaluation["passed"] is True
+    assert evaluation["checks"]["early_window_rmse_ratio_x"] is True
+    assert evaluation["checks"]["post_4s_internal_bound_fraction_u0"] is True

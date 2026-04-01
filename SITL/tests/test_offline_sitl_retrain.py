@@ -158,6 +158,43 @@ def test_run_sitl_retrain_can_emit_affine_artifact_metadata(tmp_path: Path):
     assert "u_trim" in metadata
 
 
+def test_run_sitl_retrain_can_emit_hover_residual_artifact_metadata(tmp_path: Path):
+    run_dir = tmp_path / "results" / "sitl" / "hover_residual_excitation"
+    run_dir.mkdir(parents=True)
+    _write_runtime_log(
+        run_dir / "runtime_log.csv",
+        collective_values=[44.0, 48.0, 52.0, 50.0],
+        x_values=[0.0, 0.1, 0.2, 0.3],
+        z_values=[0.0, 0.15, 0.30, 0.45],
+    )
+    _write_run_metadata(run_dir / "run_metadata.json")
+
+    output = run_sitl_retrain(
+        train_runs=[run_dir / "runtime_log.csv"],
+        eval_runs=[run_dir / "runtime_log.csv"],
+        results_root=tmp_path / "results" / "offline",
+        state_source="raw",
+        control_source="used",
+        n_basis=0,
+        tag="hover_residual",
+        affine=True,
+        hover_residual=True,
+    )
+
+    summary = json.loads(output.summary_json.read_text())
+    _, metadata = load_edmd_artifact(output.artifact_paths[0])
+
+    assert summary["hover_residual"] is True
+    assert summary["residual_enabled"] is True
+    assert summary["state_coordinates"] == "takeoff_hold_hover_local"
+    assert summary["state_trim_mode"] == "per_run_takeoff_hold_final"
+    assert len(summary["state_trim"]) == 18
+    assert metadata["residual_enabled"] is True
+    assert metadata["state_coordinates"] == "takeoff_hold_hover_local"
+    assert metadata["state_trim_mode"] == "per_run_takeoff_hold_final"
+    assert np.asarray(metadata["state_trim"], dtype=float).shape == (18, 1)
+
+
 def test_load_edmd_artifact_supports_affine_bias_prediction(tmp_path: Path):
     artifact_path = tmp_path / "affine_edmd_unquantized.npz"
     bias = np.array([0.25, -0.5, 0.0, 1.0], dtype=float)
@@ -208,3 +245,31 @@ def test_load_edmd_artifact_remains_backward_compatible_with_legacy_metadata(tmp
     assert "u_train_min" in metadata
     assert "u_train_max" in metadata
     assert "u_trim" not in metadata
+
+
+def test_load_edmd_artifact_supports_residual_metadata(tmp_path: Path):
+    artifact_path = tmp_path / "residual_edmd_unquantized.npz"
+    np.savez(
+        artifact_path,
+        A=np.eye(4, dtype=float),
+        B=np.eye(4, dtype=float),
+        C=np.eye(4, dtype=float),
+        Z1=np.zeros((4, 1), dtype=float),
+        Z2=np.zeros((4, 1), dtype=float),
+        n_basis=np.array([0]),
+        residual_enabled=np.array([1.0], dtype=float),
+        state_coordinates=np.array(["takeoff_hold_hover_local"]),
+        state_trim_mode=np.array(["per_run_takeoff_hold_final"]),
+        state_trim=np.zeros((18, 1), dtype=float),
+        x_train_min=np.zeros((18, 1), dtype=float),
+        x_train_max=np.ones((18, 1), dtype=float),
+        u_train_min=np.zeros((4, 1), dtype=float),
+        u_train_max=np.ones((4, 1), dtype=float),
+    )
+
+    _, metadata = load_edmd_artifact(artifact_path)
+
+    assert metadata["residual_enabled"] is True
+    assert metadata["state_coordinates"] == "takeoff_hold_hover_local"
+    assert metadata["state_trim_mode"] == "per_run_takeoff_hold_final"
+    assert np.asarray(metadata["state_trim"], dtype=float).shape == (18, 1)

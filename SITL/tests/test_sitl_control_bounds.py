@@ -144,6 +144,40 @@ def test_runtime_edmd_control_coordinates_intersect_learned_and_vehicle_limits()
     npt.assert_allclose(coordinates.internal_upper_bounds, np.array([2.5, 1.8, 2.35, 3.6]))
 
 
+def test_runtime_edmd_control_coordinates_apply_inward_margin_for_residual_artifacts():
+    scaling = VehicleScalingConfig(max_collective_thrust_newton=62.0, max_body_torque_x_nm=1.0, max_body_torque_y_nm=1.0, max_body_torque_z_nm=0.6)
+    metadata = {
+        "u_train_min": np.array([[42.0], [-0.30], [-0.37], [-0.35]], dtype=float),
+        "u_train_max": np.array([[60.0], [0.20], [0.48], [0.18]], dtype=float),
+        "u_train_mean": np.array([[50.0], [0.02], [0.01], [0.00]], dtype=float),
+        "u_train_std": np.array([[4.0], [0.10], [0.20], [0.05]], dtype=float),
+        "u_trim": np.array([[50.0], [0.02], [0.01], [0.00]], dtype=float),
+        "residual_enabled": True,
+    }
+
+    coordinates = runtime_edmd_control_coordinates(scaling, metadata)
+
+    npt.assert_allclose(coordinates.physical_lower_bounds, np.array([42.9, -0.275, -0.3275, -0.3235]))
+    npt.assert_allclose(coordinates.physical_upper_bounds, np.array([59.1, 0.175, 0.4375, 0.1535]))
+
+
+def test_runtime_edmd_control_coordinates_fall_back_when_margin_would_invert_interval():
+    scaling = VehicleScalingConfig(max_collective_thrust_newton=62.0, max_body_torque_x_nm=1.0, max_body_torque_y_nm=1.0, max_body_torque_z_nm=0.6)
+    metadata = {
+        "u_train_min": np.array([[50.0], [0.1], [0.1], [0.1]], dtype=float),
+        "u_train_max": np.array([[50.0], [0.1], [0.1], [0.1]], dtype=float),
+        "u_train_mean": np.array([[50.0], [0.1], [0.1], [0.1]], dtype=float),
+        "u_train_std": np.array([[4.0], [0.1], [0.2], [0.05]], dtype=float),
+        "u_trim": np.array([[50.0], [0.1], [0.1], [0.1]], dtype=float),
+        "residual_enabled": True,
+    }
+
+    coordinates = runtime_edmd_control_coordinates(scaling, metadata)
+
+    npt.assert_allclose(coordinates.physical_lower_bounds, np.array([50.0, 0.1, 0.1, 0.1]))
+    npt.assert_allclose(coordinates.physical_upper_bounds, np.array([50.0, 0.1, 0.1, 0.1]))
+
+
 def test_control_coordinates_round_trip_between_physical_and_internal_domains():
     scaling = VehicleScalingConfig()
     metadata = {

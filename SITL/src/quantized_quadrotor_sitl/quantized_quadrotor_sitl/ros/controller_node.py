@@ -27,6 +27,7 @@ from ..quantization.partition import partition_range
 from ..telemetry.adapter import physical_control_to_px4_wrench
 from ..utils.control_bounds import RuntimeControlCoordinates, runtime_edmd_control_coordinates
 from ..utils.io import create_sitl_results_directory, write_json
+from ..utils.state import state18_history_to_hover_local_residual, state18_to_hover_local_residual, takeoff_hold_trim_state18
 from .offboard import offboard_control_mode_msg
 
 
@@ -46,11 +47,14 @@ class ControllerNode(Node):
         self.config: RuntimeConfig = load_runtime_config(self._resolve_path(config_path))
         self.params = get_params()
         self.model = None
-        self.metadata: dict[str, np.ndarray] = {}
+        self.metadata: dict[str, object] = {}
         self.control_coordinates: RuntimeControlCoordinates | None = None
+        self.residual_enabled = False
+        self.runtime_state_trim: np.ndarray | None = None
         if self.config.controller_mode == "edmd_mpc":
             self.model, self.metadata = load_edmd_artifact(self._resolve_path(self.config.model_artifact))
             self.control_coordinates = runtime_edmd_control_coordinates(self.config.vehicle_scaling, self.metadata)
+            self.residual_enabled = bool(self.metadata.get("residual_enabled", False))
             self.get_logger().info(
                 f"Using controller mode '{self.config.controller_mode}' with artifact {self.config.model_artifact}"
             )
@@ -73,6 +77,10 @@ class ControllerNode(Node):
                     "Effective normalized control bounds "
                     f"{np.array2string(self.control_coordinates.internal_lower_bounds, precision=3)} to "
                     f"{np.array2string(self.control_coordinates.internal_upper_bounds, precision=3)}."
+                )
+            if self.residual_enabled:
+                self.get_logger().info(
+                    "Using takeoff-hold hover-local residual state coordinates for runtime EDMD prediction."
                 )
             elif self.control_coordinates.physical_lower_bounds[0] > self.config.vehicle_scaling.control_lower_bounds()[0]:
                 self.get_logger().info(
@@ -202,8 +210,14 @@ class ControllerNode(Node):
         self.reference_sample_count = self.reference_physical.shape[1]
         if self.config.controller_mode == "edmd_mpc":
             assert self.model is not None
+            if self.residual_enabled:
+                self.runtime_state_trim = takeoff_hold_trim_state18(state0)
+                reference_model_state = state18_history_to_hover_local_residual(self.reference_physical, self.runtime_state_trim)
+            else:
+                self.runtime_state_trim = None
+                reference_model_state = self.reference_physical
             self.reference_lifted = np.column_stack(
-                [lift_state(self.reference_physical[:, idx], self.model.n_basis) for idx in range(self.reference_physical.shape[1])]
+                [lift_state(reference_model_state[:, idx], self.model.n_basis) for idx in range(reference_model_state.shape[1])]
             )
         else:
             self.reference_lifted = np.empty((0, 0), dtype=float)
@@ -217,6 +231,7 @@ class ControllerNode(Node):
             "reference_duration_s": float(self.config.reference_duration_s),
             "model_artifact": self.config.model_artifact,
             "model_affine_enabled": bool(self.model.affine_enabled) if self.model is not None else False,
+            "model_residual_enabled": bool(self.residual_enabled),
             "quantization_mode": self.config.quantization_mode,
             "baseline": asdict(self.config.baseline),
             "vehicle_scaling": asdict(self.config.vehicle_scaling),
@@ -230,6 +245,18 @@ class ControllerNode(Node):
                 "physical_upper_bounds": self.control_coordinates.physical_upper_bounds.tolist(),
                 "internal_lower_bounds": self.control_coordinates.internal_lower_bounds.tolist(),
                 "internal_upper_bounds": self.control_coordinates.internal_upper_bounds.tolist(),
+            }
+        if self.residual_enabled:
+            payload["state_coordinates"] = {
+                "residual_enabled": True,
+                "state_coordinates": str(self.metadata.get("state_coordinates", "takeoff_hold_hover_local")),
+                "state_trim_mode": str(self.metadata.get("state_trim_mode", "per_run_takeoff_hold_final")),
+                "artifact_state_trim": []
+                if "state_trim" not in self.metadata
+                else np.asarray(self.metadata["state_trim"], dtype=float).reshape(18).tolist(),
+                "runtime_state_trim": []
+                if self.runtime_state_trim is None
+                else np.asarray(self.runtime_state_trim, dtype=float).reshape(18).tolist(),
             }
         if initial_state is not None:
             payload["initial_state"] = np.asarray(initial_state, dtype=float).reshape(18).tolist()
@@ -398,14 +425,21 @@ class ControllerNode(Node):
 
         state_raw = self.latest_state.copy()
         state_used = state_raw.copy()
-        if self.config.quantization_mode in {"state", "both"} and self.metadata:
-            state_used = self._quantize_vector(state_used, "x_train_min", "x_train_max")
 
         reference_row = self.reference_physical[:, reference_index]
         if self.config.controller_mode == "edmd_mpc":
             assert self.model is not None
             assert self.control_coordinates is not None
-            lifted_state = lift_state(state_used, self.model.n_basis)
+            if self.residual_enabled:
+                assert self.runtime_state_trim is not None
+                model_state = state18_to_hover_local_residual(state_used, self.runtime_state_trim)
+                if self.config.quantization_mode in {"state", "both"} and self.metadata:
+                    model_state = self._quantize_vector(model_state, "x_train_min", "x_train_max")
+            else:
+                if self.config.quantization_mode in {"state", "both"} and self.metadata:
+                    state_used = self._quantize_vector(state_used, "x_train_min", "x_train_max")
+                model_state = state_used
+            lifted_state = lift_state(model_state, self.model.n_basis)
             lifted_reference = self._reference_window(reference_index)
             solver_start = perf_counter()
             f_vector, g_matrix, a_ineq, b_ineq = get_qp(

@@ -19,6 +19,68 @@ def wb_from_state18(state: FloatArray) -> FloatArray:
     return np.asarray(state[15:18], dtype=float).reshape(3)
 
 
+def takeoff_hold_trim_state18(state18: FloatArray, hover_altitude_delta_m: float = 0.75) -> FloatArray:
+    state = np.asarray(state18, dtype=float).reshape(18)
+    trim = state.copy()
+    trim[0:3] = np.array([state[0], state[1], state[2] + hover_altitude_delta_m], dtype=float)
+    trim[3:6] = 0.0
+    trim[15:18] = 0.0
+    return trim
+
+
+def state18_to_hover_local_residual(state18: FloatArray, trim_state18: FloatArray) -> FloatArray:
+    state = np.asarray(state18, dtype=float).reshape(18)
+    trim = np.asarray(trim_state18, dtype=float).reshape(18)
+    rotation = rotation_from_state18(state)
+    trim_rotation = rotation_from_state18(trim)
+    rotation_delta = trim_rotation.T @ rotation
+    return np.concatenate(
+        [
+            state[0:3] - trim[0:3],
+            state[3:6] - trim[3:6],
+            rotation_delta.reshape(-1, order="F"),
+            state[15:18] - trim[15:18],
+        ]
+    )
+
+
+def state18_from_hover_local_residual(residual_state18: FloatArray, trim_state18: FloatArray) -> FloatArray:
+    residual = np.asarray(residual_state18, dtype=float).reshape(18)
+    trim = np.asarray(trim_state18, dtype=float).reshape(18)
+    trim_rotation = rotation_from_state18(trim)
+    rotation_delta = rotation_from_state18(residual)
+    rotation = trim_rotation @ rotation_delta
+    return np.concatenate(
+        [
+            residual[0:3] + trim[0:3],
+            residual[3:6] + trim[3:6],
+            rotation.reshape(-1, order="F"),
+            residual[15:18] + trim[15:18],
+        ]
+    )
+
+
+def state18_history_to_hover_local_residual(state_history: FloatArray, trim_state18: FloatArray) -> FloatArray:
+    history = np.asarray(state_history, dtype=float)
+    if history.ndim != 2 or history.shape[0] != 18:
+        raise ValueError("state_history must have shape (18, N)")
+    return np.column_stack(
+        [state18_to_hover_local_residual(history[:, idx], trim_state18) for idx in range(history.shape[1])]
+    )
+
+
+def state18_history_from_hover_local_residual(
+    residual_state_history: FloatArray,
+    trim_state18: FloatArray,
+) -> FloatArray:
+    history = np.asarray(residual_state_history, dtype=float)
+    if history.ndim != 2 or history.shape[0] != 18:
+        raise ValueError("residual_state_history must have shape (18, N)")
+    return np.column_stack(
+        [state18_from_hover_local_residual(history[:, idx], trim_state18) for idx in range(history.shape[1])]
+    )
+
+
 def decode_lifted_prefix(decoded24: FloatArray) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
     x = np.asarray(decoded24[0:3], dtype=float).reshape(3)
     dx = np.asarray(decoded24[3:6], dtype=float).reshape(3)

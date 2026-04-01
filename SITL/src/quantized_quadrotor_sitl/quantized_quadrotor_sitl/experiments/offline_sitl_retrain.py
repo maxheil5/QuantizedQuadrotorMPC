@@ -14,6 +14,7 @@ from .sitl_dataset import (
     evaluate_model_on_sitl_run_with_controls,
     excitation_warnings_from_diagnostics,
     load_sitl_run_dataset,
+    transform_sitl_run_dataset_to_hover_local_residual,
 )
 
 
@@ -34,11 +35,22 @@ def run_sitl_retrain(
     n_basis: int,
     tag: str | None = None,
     affine: bool = False,
+    hover_residual: bool = False,
 ) -> ExperimentOutput:
     output_dir = create_run_directory(results_root, "sitl_baseline_v1", tag=tag)
 
-    train_datasets = [load_sitl_run_dataset(path, state_source=state_source, control_source=control_source) for path in train_runs]
-    eval_datasets = [load_sitl_run_dataset(path, state_source=state_source, control_source=control_source) for path in eval_runs]
+    train_physical_datasets = [load_sitl_run_dataset(path, state_source=state_source, control_source=control_source) for path in train_runs]
+    eval_physical_datasets = [load_sitl_run_dataset(path, state_source=state_source, control_source=control_source) for path in eval_runs]
+    train_datasets = (
+        [transform_sitl_run_dataset_to_hover_local_residual(dataset) for dataset in train_physical_datasets]
+        if hover_residual
+        else train_physical_datasets
+    )
+    eval_datasets = (
+        [transform_sitl_run_dataset_to_hover_local_residual(dataset) for dataset in eval_physical_datasets]
+        if hover_residual
+        else eval_physical_datasets
+    )
     x_history, u_history, x1_history, x2_history, u1_history = build_sitl_edmd_snapshots(train_datasets)
     u_train_min = np.min(u1_history, axis=1, keepdims=True)
     u_train_max = np.max(u1_history, axis=1, keepdims=True)
@@ -48,6 +60,11 @@ def run_sitl_retrain(
     u_scale = np.maximum(u_train_std, 1.0e-6)
     u1_internal = (u1_history - u_trim) / u_scale
     model = get_edmd(x1_history, x2_history, u1_internal, n_basis, affine=affine)
+    state_trim_mean = None
+    if hover_residual:
+        state_trim_columns = [dataset.state_trim.reshape(18, 1) for dataset in train_datasets if dataset.state_trim is not None]
+        if state_trim_columns:
+            state_trim_mean = np.mean(np.hstack(state_trim_columns), axis=1, keepdims=True)
 
     artifact_path = output_dir / "edmd_unquantized.npz"
     artifact_payload: dict[str, np.ndarray] = {
@@ -66,17 +83,30 @@ def run_sitl_retrain(
         "u_trim": u_trim,
         "affine_enabled": np.array([1.0 if model.affine_enabled else 0.0], dtype=float),
     }
+    if hover_residual:
+        artifact_payload["residual_enabled"] = np.array([1.0], dtype=float)
+        artifact_payload["state_coordinates"] = np.array(["takeoff_hold_hover_local"])
+        artifact_payload["state_trim_mode"] = np.array(["per_run_takeoff_hold_final"])
+        if state_trim_mean is not None:
+            artifact_payload["state_trim"] = state_trim_mean
     if model.affine_enabled and model.bias is not None:
         artifact_payload["bias"] = np.asarray(model.bias, dtype=float).reshape(-1)
     save_npz(artifact_path, **artifact_payload)
 
     metrics_rows: list[dict[str, object]] = []
-    train_diagnostics = [compute_sitl_run_diagnostics(dataset) for dataset in train_datasets]
-    eval_diagnostics = [compute_sitl_run_diagnostics(dataset) for dataset in (eval_datasets if eval_datasets else train_datasets)]
+    train_diagnostics = [compute_sitl_run_diagnostics(dataset) for dataset in train_physical_datasets]
+    eval_diagnostics = [
+        compute_sitl_run_diagnostics(dataset)
+        for dataset in (eval_physical_datasets if eval_physical_datasets else train_physical_datasets)
+    ]
     for split_name, datasets in (("train", train_datasets), ("eval", eval_datasets if eval_datasets else train_datasets)):
         for dataset in datasets:
             scores = evaluate_model_on_sitl_run_with_controls(dataset, model, control_trim=u_trim, control_scale=u_scale)
-            diagnostics = compute_sitl_run_diagnostics(dataset)
+            if split_name == "train":
+                diagnostics = next(item for item in train_diagnostics if item["run_name"] == dataset.run_name)
+            else:
+                source = eval_diagnostics if eval_datasets else train_diagnostics
+                diagnostics = next(item for item in source if item["run_name"] == dataset.run_name)
             metrics_rows.append(
                 {
                     "split": split_name,
@@ -134,9 +164,14 @@ def run_sitl_retrain(
             "control_source": control_source,
             "n_basis": n_basis,
             "affine_enabled": bool(model.affine_enabled),
+            "hover_residual": bool(hover_residual),
             "u_train_mean": u_train_mean.reshape(-1).tolist(),
             "u_train_std": u_train_std.reshape(-1).tolist(),
             "u_trim": u_trim.reshape(-1).tolist(),
+            "residual_enabled": bool(hover_residual),
+            "state_coordinates": "takeoff_hold_hover_local" if hover_residual else "absolute_state18",
+            "state_trim_mode": "per_run_takeoff_hold_final" if hover_residual else "none",
+            "state_trim": [] if state_trim_mean is None else state_trim_mean.reshape(-1).tolist(),
             "bias": model.affine_bias().reshape(-1).tolist() if model.affine_enabled else [],
             "excitation_thresholds": excitation_thresholds,
             "warnings": warnings,
@@ -147,6 +182,7 @@ def run_sitl_retrain(
                 "The existing paper/offline parity paths are intentionally left untouched.",
                 "Audit finding: the current random offline generator uses one constant control per trajectory, while the manuscript text describes random controls applied at each time step.",
                 "When affine_enabled is true, the lifted dynamics include a constant bias term estimated directly from the SITL data.",
+                "When hover_residual is true, each SITL run is transformed into a takeoff-hold hover-local residual state before EDMD fitting and evaluation.",
             ],
         },
     )
@@ -172,6 +208,11 @@ def main() -> None:
     parser.add_argument("--n-basis", type=int, default=3)
     parser.add_argument("--tag", type=str, default=None)
     parser.add_argument("--affine", action="store_true", help="Fit an affine EDMD model with a constant lifted-state bias term.")
+    parser.add_argument(
+        "--hover-residual",
+        action="store_true",
+        help="Fit EDMD in takeoff-hold hover-local residual state coordinates.",
+    )
     args = parser.parse_args()
 
     train_runs = [_resolve_run_spec(args.runs_root, raw_spec) for raw_spec in args.train_run]
@@ -185,6 +226,7 @@ def main() -> None:
         n_basis=args.n_basis,
         tag=args.tag,
         affine=args.affine,
+        hover_residual=args.hover_residual,
     )
     print(output.root_dir)
 

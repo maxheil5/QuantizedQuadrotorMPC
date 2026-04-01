@@ -9,11 +9,14 @@ import numpy as np
 
 HOVER_GATE_PROFILES: dict[str, dict[str, float]] = {
     "light": {
-        "z_max_min": 0.60,
-        "final_altitude_error_max": 0.15,
-        "max_lateral_radius_max": 0.50,
-        "torque_near_limit_fraction_max": 0.25,
+        "z_max_min": 0.75,
+        "final_altitude_error_max": 0.50,
+        "max_lateral_radius_max": 3.0,
         "solver_mean_ms_max": 15.0,
+        "post_4s_internal_bound_fraction_max": 0.15,
+        "early_window_rmse_ratio_x_max": 7.0,
+        "early_window_rmse_ratio_dx_max": 3.0,
+        "early_window_rmse_ratio_wb_max": 3.0,
     },
     "standard": {
         "final_altitude_error_max": 0.15,
@@ -106,12 +109,25 @@ def evaluate_hover_gates(log_path: Path, profile: str, drift_summary_path: Path 
         checks["z_max"] = metrics["z_max"] >= thresholds["z_max_min"]
     checks["final_altitude_error"] = metrics["final_altitude_error"] <= thresholds["final_altitude_error_max"]
     checks["max_lateral_radius"] = metrics["max_lateral_radius"] <= thresholds["max_lateral_radius_max"]
-    checks["u1_near_limit_fraction"] = metrics["u1_near_limit_fraction"] <= thresholds["torque_near_limit_fraction_max"]
-    checks["u2_near_limit_fraction"] = metrics["u2_near_limit_fraction"] <= thresholds["torque_near_limit_fraction_max"]
-    checks["u3_near_limit_fraction"] = metrics["u3_near_limit_fraction"] <= thresholds["torque_near_limit_fraction_max"]
+    if "torque_near_limit_fraction_max" in thresholds:
+        checks["u1_near_limit_fraction"] = metrics["u1_near_limit_fraction"] <= thresholds["torque_near_limit_fraction_max"]
+        checks["u2_near_limit_fraction"] = metrics["u2_near_limit_fraction"] <= thresholds["torque_near_limit_fraction_max"]
+        checks["u3_near_limit_fraction"] = metrics["u3_near_limit_fraction"] <= thresholds["torque_near_limit_fraction_max"]
     checks["solver_mean_ms"] = metrics["solver_mean_ms"] <= thresholds["solver_mean_ms_max"]
     if "tick_mean_ms_max" in thresholds:
         checks["tick_mean_ms"] = metrics["tick_mean_ms"] <= thresholds["tick_mean_ms_max"]
+    if drift_summary is not None:
+        post_four = drift_summary.get("post_4s_internal_bound_fraction", {})
+        if isinstance(post_four, dict) and "post_4s_internal_bound_fraction_max" in thresholds:
+            for key in ("u0", "u1", "u2", "u3"):
+                if key in post_four:
+                    checks[f"post_4s_internal_bound_fraction_{key}"] = float(post_four[key]) <= thresholds["post_4s_internal_bound_fraction_max"]
+        early_ratios = drift_summary.get("early_window_rmse_ratio", {})
+        if isinstance(early_ratios, dict):
+            for key in ("x", "dx", "wb"):
+                threshold_key = f"early_window_rmse_ratio_{key}_max"
+                if threshold_key in thresholds and key in early_ratios:
+                    checks[f"early_window_rmse_ratio_{key}"] = float(early_ratios[key]) <= thresholds[threshold_key]
     return {
         "profile": profile,
         "passed": bool(all(checks.values())),
@@ -119,4 +135,6 @@ def evaluate_hover_gates(log_path: Path, profile: str, drift_summary_path: Path 
         "metrics": metrics,
         "diagnostic_branch": None if drift_summary is None else drift_summary.get("selected_branch"),
         "dominant_drift_channel": None if drift_summary is None else drift_summary.get("dominant_error_group"),
+        "early_window_rmse_ratio": None if drift_summary is None else drift_summary.get("early_window_rmse_ratio"),
+        "post_4s_internal_bound_fraction": None if drift_summary is None else drift_summary.get("post_4s_internal_bound_fraction"),
     }

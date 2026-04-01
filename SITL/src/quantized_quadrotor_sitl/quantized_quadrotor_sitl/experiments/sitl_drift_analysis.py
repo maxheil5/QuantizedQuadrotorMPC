@@ -16,8 +16,9 @@ from ..utils.control_bounds import runtime_edmd_control_coordinates
 from ..utils.io import write_csv, write_json
 from ..utils.linear_algebra import vee_map
 from ..utils.metrics import rmse
+from ..utils.state import takeoff_hold_trim_state18
 from ..utils.state import decode_lifted_prefix, encode_state24_from_state18
-from .sitl_dataset import SITLRunDataset, load_sitl_run_dataset
+from .sitl_dataset import SITLRunDataset, load_sitl_run_dataset, transform_sitl_run_dataset_to_hover_local_residual
 
 
 EARLY_WINDOW_SECONDS = 2.0
@@ -101,6 +102,25 @@ def _pre_divergence_bound_fraction(
     return {f"u{idx}": float(fraction[idx]) for idx in range(history.shape[0])}
 
 
+def _post_time_bound_fraction(
+    control_internal_history: np.ndarray,
+    lower_bounds: np.ndarray,
+    upper_bounds: np.ndarray,
+    experiment_time_s: np.ndarray,
+    start_time_s: float,
+) -> dict[str, float]:
+    mask = np.asarray(experiment_time_s, dtype=float) >= float(start_time_s)
+    if not np.any(mask):
+        mask = np.ones_like(experiment_time_s, dtype=bool)
+    history = control_internal_history[:, mask]
+    span = np.maximum(upper_bounds - lower_bounds, 1.0e-6)
+    tolerance = BOUND_ACTIVITY_MARGIN_FRACTION * span
+    near_lower = history <= (lower_bounds.reshape(-1, 1) + tolerance.reshape(-1, 1))
+    near_upper = history >= (upper_bounds.reshape(-1, 1) - tolerance.reshape(-1, 1))
+    fraction = np.mean(np.logical_or(near_lower, near_upper), axis=1)
+    return {f"u{idx}": float(fraction[idx]) for idx in range(history.shape[0])}
+
+
 def _divergence_time(run: SITLRunDataset) -> tuple[float, int]:
     position_error = run.state_history[0:3, :] - run.reference_history[0:3, :]
     position_error_norm = np.linalg.norm(position_error, axis=0)
@@ -152,6 +172,16 @@ def analyze_runtime_drift(
 ) -> dict[str, object]:
     run = load_sitl_run_dataset(log_path, state_source="used", control_source="used")
     model, metadata = load_edmd_artifact(artifact_path)
+    residual_enabled = bool(metadata.get("residual_enabled", False))
+    analysis_run = run
+    if residual_enabled:
+        runtime_trim = None
+        state_coordinates = run.run_metadata.get("state_coordinates", {})
+        if isinstance(state_coordinates, dict) and state_coordinates.get("runtime_state_trim"):
+            runtime_trim = np.asarray(state_coordinates["runtime_state_trim"], dtype=float).reshape(18)
+        if runtime_trim is None:
+            runtime_trim = takeoff_hold_trim_state18(run.state_history[:, 0])
+        analysis_run = transform_sitl_run_dataset_to_hover_local_residual(run, runtime_trim)
     scaling = _vehicle_scaling_from_run(run)
     coordinates = runtime_edmd_control_coordinates(scaling, metadata)
     control_internal_history = _control_internal_history(run, coordinates)
@@ -161,27 +191,27 @@ def analyze_runtime_drift(
     one_step_reference_columns: list[np.ndarray] = []
     trace_rows: list[dict[str, object]] = []
 
-    for idx in range(run.pair_count):
-        lifted_state = lift_state(run.state_history[:, idx], model.n_basis)
+    for idx in range(analysis_run.pair_count):
+        lifted_state = lift_state(analysis_run.state_history[:, idx], model.n_basis)
         one_step_predicted = model.predict_next_lifted(lifted_state, control_internal_history[:, idx])
         one_step_decoded = model.C @ one_step_predicted
-        one_step_reference = encode_state24_from_state18(run.state_history[:, idx + 1])
+        one_step_reference = encode_state24_from_state18(analysis_run.state_history[:, idx + 1])
         one_step_predicted_columns.append(one_step_decoded)
         one_step_reference_columns.append(one_step_reference)
 
-        replay_steps = min(replay_horizon_steps, run.pair_count - idx)
-        replay_lifted = lift_state(run.state_history[:, idx], model.n_basis)
+        replay_steps = min(replay_horizon_steps, analysis_run.pair_count - idx)
+        replay_lifted = lift_state(analysis_run.state_history[:, idx], model.n_basis)
         for step in range(replay_steps):
             replay_lifted = model.predict_next_lifted(replay_lifted, control_internal_history[:, idx + step])
         replay_decoded = model.C @ replay_lifted
-        replay_reference = encode_state24_from_state18(run.state_history[:, idx + replay_steps])
+        replay_reference = encode_state24_from_state18(analysis_run.state_history[:, idx + replay_steps])
 
         one_step_errors = _group_error_norms(one_step_decoded, one_step_reference)
         replay_errors = _group_error_norms(replay_decoded, replay_reference)
 
         trace_row: dict[str, object] = {
             "step": idx,
-            "experiment_time_s": float(run.experiment_time_s[idx + 1]),
+            "experiment_time_s": float(analysis_run.experiment_time_s[idx + 1]),
             "replay_horizon_steps": int(replay_steps),
             **{f"one_step_error_{key}": value for key, value in one_step_errors.items()},
             **{f"replay_error_{key}": value for key, value in replay_errors.items()},
@@ -199,7 +229,7 @@ def analyze_runtime_drift(
 
     one_step_predicted_history = np.column_stack(one_step_predicted_columns)
     one_step_reference_history = np.column_stack(one_step_reference_columns)
-    prediction_time_s = run.experiment_time_s[1:]
+    prediction_time_s = analysis_run.experiment_time_s[1:]
     early_mask = prediction_time_s <= float(early_window_s)
     if not np.any(early_mask):
         early_mask = np.ones_like(prediction_time_s, dtype=bool)
@@ -218,11 +248,19 @@ def analyze_runtime_drift(
         coordinates.internal_upper_bounds,
         divergence_index,
     )
+    post_four_second_fraction = _post_time_bound_fraction(
+        control_internal_history,
+        coordinates.internal_lower_bounds,
+        coordinates.internal_upper_bounds,
+        run.experiment_time_s,
+        start_time_s=4.0,
+    )
 
     summary: dict[str, object] = {
         "run_name": run.run_name,
         "log_path": str(Path(log_path)),
         "artifact_path": str(Path(artifact_path)),
+        "residual_enabled": residual_enabled,
         "replay_horizon_steps": int(replay_horizon_steps),
         "early_window_s": float(early_window_s),
         "artifact_eval_rmse": artifact_eval.as_dict(),
@@ -230,6 +268,7 @@ def analyze_runtime_drift(
         "early_window_rmse_ratio": early_window_rmse_ratio,
         "divergence_time_s": divergence_time_s,
         "pre_divergence_internal_bound_fraction": pre_divergence_fraction,
+        "post_4s_internal_bound_fraction": post_four_second_fraction,
         "dominant_error_group": dominant_error_group,
         "thresholds": {
             "branch_a_theta_ratio": BRANCH_A_THETA_RATIO_THRESHOLD,
@@ -238,6 +277,7 @@ def analyze_runtime_drift(
             "branch_b_divergence_time_s": BRANCH_B_DIVERGENCE_TIME_SECONDS,
             "branch_b_bound_fraction": BRANCH_B_BOUND_FRACTION_THRESHOLD,
             "bound_activity_margin_fraction": BOUND_ACTIVITY_MARGIN_FRACTION,
+            "post_4s_internal_bound_fraction_max": 0.15,
         },
     }
     summary["selected_branch"] = select_drift_branch(summary)

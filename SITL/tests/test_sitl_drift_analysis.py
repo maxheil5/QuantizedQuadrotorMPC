@@ -129,6 +129,42 @@ def _write_artifact(path: Path, model: EDMDModel, rmse_values: tuple[float, floa
     )
 
 
+def _write_residual_artifact(path: Path, model: EDMDModel, rmse_values: tuple[float, float, float, float]) -> None:
+    payload: dict[str, np.ndarray] = {
+        "A": model.A,
+        "B": model.B,
+        "C": model.C,
+        "Z1": model.Z1,
+        "Z2": model.Z2,
+        "n_basis": np.array([model.n_basis]),
+        "x_train_min": np.zeros((18, 1), dtype=float),
+        "x_train_max": np.ones((18, 1), dtype=float),
+        "u_train_min": np.array([[0.0], [-1.0], [-1.0], [-1.0]], dtype=float),
+        "u_train_max": np.array([[4.0], [1.0], [1.0], [1.0]], dtype=float),
+        "u_train_mean": np.array([[2.0], [0.0], [0.0], [0.0]], dtype=float),
+        "u_train_std": np.array([[0.5], [1.0], [1.0], [1.0]], dtype=float),
+        "u_trim": np.array([[2.0], [0.0], [0.0], [0.0]], dtype=float),
+        "affine_enabled": np.array([1.0 if model.affine_enabled else 0.0], dtype=float),
+        "residual_enabled": np.array([1.0], dtype=float),
+        "state_coordinates": np.array(["takeoff_hold_hover_local"]),
+        "state_trim_mode": np.array(["per_run_takeoff_hold_final"]),
+        "state_trim": np.zeros((18, 1), dtype=float),
+    }
+    if model.affine_enabled and model.bias is not None:
+        payload["bias"] = np.asarray(model.bias, dtype=float)
+    np.savez(path, **payload)
+    metrics_path = path.parent / "metrics_summary.csv"
+    metrics_path.write_text(
+        "\n".join(
+            [
+                "split,run_name,rmse_x,rmse_dx,rmse_theta,rmse_wb",
+                f"eval,held_out,{rmse_values[0]},{rmse_values[1]},{rmse_values[2]},{rmse_values[3]}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 def _identity_model() -> EDMDModel:
     return EDMDModel(
         A=np.eye(24, dtype=float),
@@ -229,3 +265,27 @@ def test_analyze_runtime_drift_selects_branch_b_for_early_divergence_with_bound_
     assert summary["selected_branch"] == "Branch B"
     assert summary["divergence_time_s"] < 4.0
     assert summary["pre_divergence_internal_bound_fraction"]["u1"] > 0.1
+
+
+def test_analyze_runtime_drift_reports_post_four_second_bound_activity_for_residual_artifacts(tmp_path: Path):
+    run_dir = tmp_path / "4-1-26_1900"
+    run_dir.mkdir()
+    log_path = run_dir / "runtime_log.csv"
+    artifact_path = tmp_path / "results" / "offline" / "edmd_unquantized.npz"
+    artifact_path.parent.mkdir(parents=True)
+
+    _write_residual_artifact(artifact_path, _identity_model(), rmse_values=(1.0, 1.0, 1.0, 1.0))
+    _write_run_metadata(run_dir / "run_metadata.json")
+    _write_runtime_log(
+        log_path,
+        states=[_identity_state18(0.0, 0.1 * idx) for idx in range(10)],
+        references=[_identity_state18(0.0, 0.1 * idx) for idx in range(10)],
+        controls=[[4.0, 1.0, 0.0, 0.0]] * 10,
+        control_internal=[[0.0, 0.0, 0.0, 0.0]] * 8 + [[3.6, 0.9, 0.0, 0.0], [3.6, 0.9, 0.0, 0.0]],
+    )
+
+    summary = analyze_runtime_drift(log_path, artifact_path)
+
+    assert summary["residual_enabled"] is True
+    assert summary["post_4s_internal_bound_fraction"]["u0"] > 0.0
+    assert summary["post_4s_internal_bound_fraction"]["u1"] > 0.0

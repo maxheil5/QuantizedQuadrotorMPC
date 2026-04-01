@@ -27,7 +27,7 @@ class RuntimeControlCoordinates:
 
 
 def _metadata_vector(
-    metadata: dict[str, np.ndarray] | None,
+    metadata: dict[str, object] | None,
     key: str,
     width: int,
 ) -> np.ndarray | None:
@@ -39,9 +39,15 @@ def _metadata_vector(
     return values
 
 
+def _residual_enabled(metadata: dict[str, object] | None) -> bool:
+    if not metadata:
+        return False
+    return bool(metadata.get("residual_enabled", False))
+
+
 def runtime_edmd_control_bounds(
     scaling: VehicleScalingConfig,
-    metadata: dict[str, np.ndarray] | None,
+    metadata: dict[str, object] | None,
 ) -> tuple[np.ndarray, np.ndarray]:
     lower_bounds = scaling.control_lower_bounds().copy()
     upper_bounds = scaling.control_upper_bounds().copy()
@@ -60,7 +66,7 @@ def runtime_edmd_control_bounds(
 
 def runtime_edmd_control_coordinates(
     scaling: VehicleScalingConfig,
-    metadata: dict[str, np.ndarray] | None,
+    metadata: dict[str, object] | None,
 ) -> RuntimeControlCoordinates:
     vehicle_lower_bounds = scaling.control_lower_bounds()
     vehicle_upper_bounds = scaling.control_upper_bounds()
@@ -87,6 +93,14 @@ def runtime_edmd_control_coordinates(
 
     physical_lower_bounds = np.maximum(vehicle_lower_bounds, u_train_min)
     physical_upper_bounds = np.minimum(vehicle_upper_bounds, u_train_max)
+    if _residual_enabled(metadata):
+        span = np.maximum(physical_upper_bounds - physical_lower_bounds, 0.0)
+        margin = 0.05 * span
+        candidate_lower_bounds = physical_lower_bounds + margin
+        candidate_upper_bounds = physical_upper_bounds - margin
+        valid_mask = candidate_lower_bounds <= candidate_upper_bounds
+        physical_lower_bounds = np.where(valid_mask, candidate_lower_bounds, physical_lower_bounds)
+        physical_upper_bounds = np.where(valid_mask, candidate_upper_bounds, physical_upper_bounds)
     physical_upper_bounds = np.maximum(physical_upper_bounds, physical_lower_bounds)
     scale = np.maximum(np.abs(u_train_std), 1.0e-6)
     internal_lower_bounds = (physical_lower_bounds - u_trim) / scale
