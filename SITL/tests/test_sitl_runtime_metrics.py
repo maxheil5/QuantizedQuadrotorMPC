@@ -106,3 +106,24 @@ def test_evaluate_hover_gates_reports_standard_profile_pass(tmp_path: Path):
 
     assert evaluation["passed"] is True
     assert all(bool(value) for value in evaluation["checks"].values())
+
+
+def test_evaluate_hover_gates_includes_drift_sidecar_metadata_when_present(tmp_path: Path):
+    run_dir = tmp_path / "4-1-26_1640_1"
+    run_dir.mkdir(parents=True)
+    _write_runtime_log(run_dir / "runtime_log.csv", [0.0, 0.62, 0.74], [0.0, 0.03, 0.04], [0.0, 0.05, 0.08], 7.5, 11.0)
+    _write_run_metadata(run_dir / "run_metadata.json")
+    (run_dir / "drift_summary.json").write_text(
+        json.dumps(
+            {
+                "selected_branch": "Branch A",
+                "dominant_error_group": "x",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evaluation = evaluate_hover_gates(run_dir / "runtime_log.csv", profile="standard")
+
+    assert evaluation["diagnostic_branch"] == "Branch A"
+    assert evaluation["dominant_drift_channel"] == "x"

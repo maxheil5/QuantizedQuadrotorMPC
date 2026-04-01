@@ -19,9 +19,12 @@ class SITLRunDataset:
     log_path: Path
     state_history: np.ndarray
     control_history: np.ndarray
+    reference_history: np.ndarray
+    experiment_time_s: np.ndarray
     tick_dt_ms: np.ndarray
     solver_ms: np.ndarray
     run_metadata: dict[str, object]
+    control_internal_history: np.ndarray | None = None
 
     @property
     def sample_count(self) -> int:
@@ -54,8 +57,13 @@ def load_sitl_run_dataset(
     control_prefix = f"control_{control_source}"
     state_history = _column_history(rows, state_prefix, 18)
     control_history = _column_history(rows, control_prefix, 4)
+    reference_history = _column_history(rows, "reference", 18)
+    experiment_time_s = np.asarray([float(row["experiment_time_s"]) for row in rows], dtype=float)
     tick_dt_ms = np.asarray([float(row["tick_dt_ms"]) for row in rows], dtype=float)
     solver_ms = np.asarray([float(row["solver_ms"]) for row in rows], dtype=float)
+    control_internal_history = None
+    if all(f"control_internal_{idx}" in rows[0] for idx in range(4)):
+        control_internal_history = _column_history(rows, "control_internal", 4)
     metadata_path = resolved_path.parent / "run_metadata.json"
     run_metadata: dict[str, object] = {}
     if metadata_path.exists():
@@ -66,9 +74,12 @@ def load_sitl_run_dataset(
         log_path=resolved_path,
         state_history=state_history,
         control_history=control_history,
+        reference_history=reference_history,
+        experiment_time_s=experiment_time_s,
         tick_dt_ms=tick_dt_ms,
         solver_ms=solver_ms,
         run_metadata=run_metadata,
+        control_internal_history=control_internal_history,
     )
 
 
@@ -103,7 +114,7 @@ def evaluate_model_on_sitl_run_with_controls(
     for idx in range(run.pair_count):
         lifted_state = lift_state(run.state_history[:, idx], model.n_basis)
         control_internal = (run.control_history[:, idx] - trim) / scale
-        predicted_lifted = model.A @ lifted_state + model.B @ control_internal
+        predicted_lifted = model.predict_next_lifted(lifted_state, control_internal)
         predicted_columns.append(model.C @ predicted_lifted)
         reference_columns.append(encode_state24_from_state18(run.state_history[:, idx + 1]))
     return rmse(np.column_stack(predicted_columns), np.column_stack(reference_columns))

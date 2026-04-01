@@ -25,3 +25,15 @@ def test_edmd_output_shapes_match_matlab():
     assert model.B.shape == (51, 4)
     assert model.C.shape == (24, 51)
 
+
+def test_affine_edmd_exposes_bias_vector():
+    state = initial_state()
+    x1 = np.repeat(state[:, None], 3, axis=1)
+    x2 = x1.copy()
+    x2[0, :] += np.array([0.1, 0.2, 0.3], dtype=float)
+    u1 = np.zeros((4, 3))
+    model = get_edmd(x1, x2, u1, n_basis=0, affine=True)
+
+    assert model.affine_enabled is True
+    assert model.bias is not None
+    assert model.bias.shape == (24,)

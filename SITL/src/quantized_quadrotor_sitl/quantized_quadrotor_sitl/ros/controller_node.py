@@ -54,6 +54,10 @@ class ControllerNode(Node):
             self.get_logger().info(
                 f"Using controller mode '{self.config.controller_mode}' with artifact {self.config.model_artifact}"
             )
+            if self.model.affine_enabled:
+                self.get_logger().info(
+                    "Affine EDMD bias is enabled for runtime prediction."
+                )
             if self.control_coordinates.normalized:
                 self.get_logger().info(
                     "Using trim-centered normalized EDMD controls with "
@@ -212,6 +216,7 @@ class ControllerNode(Node):
             "reference_seed": int(self.config.reference_seed),
             "reference_duration_s": float(self.config.reference_duration_s),
             "model_artifact": self.config.model_artifact,
+            "model_affine_enabled": bool(self.model.affine_enabled) if self.model is not None else False,
             "quantization_mode": self.config.quantization_mode,
             "baseline": asdict(self.config.baseline),
             "vehicle_scaling": asdict(self.config.vehicle_scaling),

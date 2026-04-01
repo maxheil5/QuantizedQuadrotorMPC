@@ -201,3 +201,42 @@ def test_qp_delta_penalty_anchors_the_first_control_to_previous_command():
 
     npt.assert_allclose(solution[:4], previous_control, atol=1.0e-4)
     npt.assert_allclose(solution[4:8], previous_control, atol=1.0e-4)
+
+
+def test_qp_uses_affine_bias_to_counteract_model_drift():
+    lifted_state = np.zeros(24, dtype=float)
+    lifted_state[6:15] = np.eye(3, dtype=float).reshape(-1, order="F")
+    lifted_reference = lifted_state[:, None]
+
+    model = EDMDModel(
+        A=np.eye(24, dtype=float),
+        B=np.zeros((24, 4), dtype=float),
+        C=np.eye(24, dtype=float),
+        Z1=np.zeros((24, 1), dtype=float),
+        Z2=np.zeros((24, 1), dtype=float),
+        n_basis=0,
+        bias=np.concatenate([np.array([1.0], dtype=float), np.zeros(23, dtype=float)]),
+        affine_enabled=True,
+    )
+    model.B[0, 0] = 1.0
+    config = MPCConfig(
+        position_error_weights_diag=[10.0, 0.0, 0.0],
+        velocity_error_weights_diag=[0.0, 0.0, 0.0],
+        attitude_error_weight=0.0,
+        angular_velocity_error_weight=0.0,
+        control_weights_diag=[0.0, 0.0, 0.0, 0.0],
+        control_delta_weights_diag=[0.0, 0.0, 0.0, 0.0],
+    )
+
+    f_vector, g_matrix, a_ineq, b_ineq = get_qp(
+        model,
+        lifted_state,
+        lifted_reference,
+        1,
+        config,
+        np.array([-5.0, -5.0, -5.0, -5.0], dtype=float),
+        np.array([5.0, 5.0, 5.0, 5.0], dtype=float),
+    )
+    solution = solve_qp(f_vector, g_matrix, a_ineq, b_ineq)
+
+    assert solution[0] < -0.5

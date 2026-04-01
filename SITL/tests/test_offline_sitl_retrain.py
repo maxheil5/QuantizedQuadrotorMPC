@@ -126,6 +126,64 @@ def test_run_sitl_retrain_writes_excitation_diagnostics_and_warning(tmp_path: Pa
     np.testing.assert_allclose(metadata["u_trim"], metadata["u_train_mean"])
 
 
+def test_run_sitl_retrain_can_emit_affine_artifact_metadata(tmp_path: Path):
+    run_dir = tmp_path / "results" / "sitl" / "affine_excitation"
+    run_dir.mkdir(parents=True)
+    _write_runtime_log(
+        run_dir / "runtime_log.csv",
+        collective_values=[44.0, 48.0, 52.0, 50.0],
+        x_values=[0.0, 0.2, 0.5, 0.9],
+        z_values=[0.0, 0.1, 0.2, 0.3],
+    )
+    _write_run_metadata(run_dir / "run_metadata.json")
+
+    output = run_sitl_retrain(
+        train_runs=[run_dir / "runtime_log.csv"],
+        eval_runs=[run_dir / "runtime_log.csv"],
+        results_root=tmp_path / "results" / "offline",
+        state_source="raw",
+        control_source="used",
+        n_basis=0,
+        tag="affine",
+        affine=True,
+    )
+
+    summary = json.loads(output.summary_json.read_text())
+    model, metadata = load_edmd_artifact(output.artifact_paths[0])
+
+    assert summary["affine_enabled"] is True
+    assert len(summary["bias"]) == 24
+    assert model.affine_enabled is True
+    assert model.bias is not None
+    assert "u_trim" in metadata
+
+
+def test_load_edmd_artifact_supports_affine_bias_prediction(tmp_path: Path):
+    artifact_path = tmp_path / "affine_edmd_unquantized.npz"
+    bias = np.array([0.25, -0.5, 0.0, 1.0], dtype=float)
+    np.savez(
+        artifact_path,
+        A=np.eye(4, dtype=float),
+        B=np.zeros((4, 4), dtype=float),
+        C=np.eye(4, dtype=float),
+        Z1=np.zeros((4, 1), dtype=float),
+        Z2=np.zeros((4, 1), dtype=float),
+        n_basis=np.array([0]),
+        bias=bias,
+        affine_enabled=np.array([1.0], dtype=float),
+        x_train_min=np.zeros((18, 1), dtype=float),
+        x_train_max=np.ones((18, 1), dtype=float),
+        u_train_min=np.zeros((4, 1), dtype=float),
+        u_train_max=np.ones((4, 1), dtype=float),
+    )
+
+    model, _ = load_edmd_artifact(artifact_path)
+    predicted = model.predict_next_lifted(np.zeros(4, dtype=float), np.zeros(4, dtype=float))
+
+    assert model.affine_enabled is True
+    np.testing.assert_allclose(predicted, bias)
+
+
 def test_load_edmd_artifact_remains_backward_compatible_with_legacy_metadata(tmp_path: Path):
     artifact_path = tmp_path / "legacy_edmd_unquantized.npz"
     np.savez(
@@ -145,6 +203,8 @@ def test_load_edmd_artifact_remains_backward_compatible_with_legacy_metadata(tmp
     model, metadata = load_edmd_artifact(artifact_path)
 
     assert model.n_basis == 3
+    assert model.affine_enabled is False
+    assert model.bias is None
     assert "u_train_min" in metadata
     assert "u_train_max" in metadata
     assert "u_trim" not in metadata

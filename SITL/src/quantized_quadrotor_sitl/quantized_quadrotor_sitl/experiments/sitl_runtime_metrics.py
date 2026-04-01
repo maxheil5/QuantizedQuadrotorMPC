@@ -85,12 +85,22 @@ def compute_hover_gate_metrics(log_path: Path) -> dict[str, float]:
     }
 
 
-def evaluate_hover_gates(log_path: Path, profile: str) -> dict[str, object]:
+def load_drift_summary(log_path: Path, drift_summary_path: Path | None = None) -> dict[str, object] | None:
+    summary_path = Path(drift_summary_path) if drift_summary_path is not None else Path(log_path).parent / "drift_summary.json"
+    if not summary_path.exists():
+        return None
+    with summary_path.open("r", encoding="utf-8") as stream:
+        payload = json.load(stream)
+    return payload if isinstance(payload, dict) else None
+
+
+def evaluate_hover_gates(log_path: Path, profile: str, drift_summary_path: Path | None = None) -> dict[str, object]:
     if profile not in HOVER_GATE_PROFILES:
         raise ValueError(f"unsupported hover-gate profile: {profile}")
 
     thresholds = HOVER_GATE_PROFILES[profile]
     metrics = compute_hover_gate_metrics(log_path)
+    drift_summary = load_drift_summary(log_path, drift_summary_path)
     checks: dict[str, bool] = {}
     if "z_max_min" in thresholds:
         checks["z_max"] = metrics["z_max"] >= thresholds["z_max_min"]
@@ -107,4 +117,6 @@ def evaluate_hover_gates(log_path: Path, profile: str) -> dict[str, object]:
         "passed": bool(all(checks.values())),
         "checks": checks,
         "metrics": metrics,
+        "diagnostic_branch": None if drift_summary is None else drift_summary.get("selected_branch"),
+        "dominant_drift_channel": None if drift_summary is None else drift_summary.get("dominant_error_group"),
     }

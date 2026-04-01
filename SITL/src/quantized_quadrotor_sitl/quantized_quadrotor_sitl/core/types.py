@@ -18,6 +18,18 @@ class EDMDModel:
     Z1: FloatArray
     Z2: FloatArray
     n_basis: int
+    bias: FloatArray | None = None
+    affine_enabled: bool = False
+
+    def affine_bias(self) -> FloatArray:
+        if not self.affine_enabled or self.bias is None:
+            return np.zeros(self.A.shape[0], dtype=float)
+        return np.asarray(self.bias, dtype=float).reshape(self.A.shape[0])
+
+    def predict_next_lifted(self, lifted_state: FloatArray, control: FloatArray) -> FloatArray:
+        state = np.asarray(lifted_state, dtype=float).reshape(self.A.shape[1])
+        command = np.asarray(control, dtype=float).reshape(self.B.shape[1])
+        return self.A @ state + self.B @ command + self.affine_bias()
 
 
 @dataclass(slots=True)
@@ -87,4 +99,3 @@ class ExperimentOutput:
     summary_json: Path
     plot_paths: list[Path]
     artifact_paths: list[Path]
-

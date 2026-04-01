@@ -33,6 +33,7 @@ def run_sitl_retrain(
     control_source: str,
     n_basis: int,
     tag: str | None = None,
+    affine: bool = False,
 ) -> ExperimentOutput:
     output_dir = create_run_directory(results_root, "sitl_baseline_v1", tag=tag)
 
@@ -46,25 +47,28 @@ def run_sitl_retrain(
     u_trim = u_train_mean.copy()
     u_scale = np.maximum(u_train_std, 1.0e-6)
     u1_internal = (u1_history - u_trim) / u_scale
-    model = get_edmd(x1_history, x2_history, u1_internal, n_basis)
+    model = get_edmd(x1_history, x2_history, u1_internal, n_basis, affine=affine)
 
     artifact_path = output_dir / "edmd_unquantized.npz"
-    save_npz(
-        artifact_path,
-        A=model.A,
-        B=model.B,
-        C=model.C,
-        Z1=model.Z1,
-        Z2=model.Z2,
-        n_basis=np.array([model.n_basis]),
-        x_train_min=np.min(x_history, axis=1, keepdims=True),
-        x_train_max=np.max(x_history, axis=1, keepdims=True),
-        u_train_min=u_train_min,
-        u_train_max=u_train_max,
-        u_train_mean=u_train_mean,
-        u_train_std=u_train_std,
-        u_trim=u_trim,
-    )
+    artifact_payload: dict[str, np.ndarray] = {
+        "A": model.A,
+        "B": model.B,
+        "C": model.C,
+        "Z1": model.Z1,
+        "Z2": model.Z2,
+        "n_basis": np.array([model.n_basis]),
+        "x_train_min": np.min(x_history, axis=1, keepdims=True),
+        "x_train_max": np.max(x_history, axis=1, keepdims=True),
+        "u_train_min": u_train_min,
+        "u_train_max": u_train_max,
+        "u_train_mean": u_train_mean,
+        "u_train_std": u_train_std,
+        "u_trim": u_trim,
+        "affine_enabled": np.array([1.0 if model.affine_enabled else 0.0], dtype=float),
+    }
+    if model.affine_enabled and model.bias is not None:
+        artifact_payload["bias"] = np.asarray(model.bias, dtype=float).reshape(-1)
+    save_npz(artifact_path, **artifact_payload)
 
     metrics_rows: list[dict[str, object]] = []
     train_diagnostics = [compute_sitl_run_diagnostics(dataset) for dataset in train_datasets]
@@ -129,9 +133,11 @@ def run_sitl_retrain(
             "state_source": state_source,
             "control_source": control_source,
             "n_basis": n_basis,
+            "affine_enabled": bool(model.affine_enabled),
             "u_train_mean": u_train_mean.reshape(-1).tolist(),
             "u_train_std": u_train_std.reshape(-1).tolist(),
             "u_trim": u_trim.reshape(-1).tolist(),
+            "bias": model.affine_bias().reshape(-1).tolist() if model.affine_enabled else [],
             "excitation_thresholds": excitation_thresholds,
             "warnings": warnings,
             "train_diagnostics": train_diagnostics,
@@ -140,6 +146,7 @@ def run_sitl_retrain(
                 "This path fits EDMD from actual SITL runtime logs rather than the simplified SRB training simulator.",
                 "The existing paper/offline parity paths are intentionally left untouched.",
                 "Audit finding: the current random offline generator uses one constant control per trajectory, while the manuscript text describes random controls applied at each time step.",
+                "When affine_enabled is true, the lifted dynamics include a constant bias term estimated directly from the SITL data.",
             ],
         },
     )
@@ -164,6 +171,7 @@ def main() -> None:
     parser.add_argument("--control-source", choices=["raw", "used"], default="used")
     parser.add_argument("--n-basis", type=int, default=3)
     parser.add_argument("--tag", type=str, default=None)
+    parser.add_argument("--affine", action="store_true", help="Fit an affine EDMD model with a constant lifted-state bias term.")
     args = parser.parse_args()
 
     train_runs = [_resolve_run_spec(args.runs_root, raw_spec) for raw_spec in args.train_run]
@@ -176,6 +184,7 @@ def main() -> None:
         control_source=args.control_source,
         n_basis=args.n_basis,
         tag=args.tag,
+        affine=args.affine,
     )
     print(output.root_dir)
 

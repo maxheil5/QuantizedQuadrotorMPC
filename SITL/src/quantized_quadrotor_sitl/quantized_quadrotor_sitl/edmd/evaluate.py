@@ -24,7 +24,7 @@ def _predict_fixed_trajectory(
     z_pred = [z0]
     z = z0.copy()
     for idx in range(n_prediction):
-        z = model.A @ z + model.B @ control[:, idx]
+        z = model.predict_next_lifted(z, control[:, idx])
         z_pred.append(z)
     z_pred_history = np.column_stack(z_pred)
 
@@ -67,4 +67,3 @@ def eval_edmd(
         "theta": _mean_std("theta"),
         "wb": _mean_std("wb"),
     }, all_scores
-

@@ -10,7 +10,13 @@ from .basis import lift_state
 FloatArray = NDArray[np.float64]
 
 
-def get_edmd(x1: FloatArray, x2: FloatArray, u1: FloatArray, n_basis: int) -> EDMDModel:
+def get_edmd(
+    x1: FloatArray,
+    x2: FloatArray,
+    u1: FloatArray,
+    n_basis: int,
+    affine: bool = False,
+) -> EDMDModel:
     z1_columns: list[FloatArray] = []
     z2_columns: list[FloatArray] = []
     for idx in range(x1.shape[1]):
@@ -19,7 +25,10 @@ def get_edmd(x1: FloatArray, x2: FloatArray, u1: FloatArray, n_basis: int) -> ED
 
     z1 = np.column_stack(z1_columns)
     z2 = np.column_stack(z2_columns)
-    z1_aug = np.vstack([z1, u1])
+    z1_aug_blocks = [z1, u1]
+    if affine:
+        z1_aug_blocks.append(np.ones((1, z1.shape[1]), dtype=float))
+    z1_aug = np.vstack(z1_aug_blocks)
     m = z1.shape[1]
 
     a_matrix = (z2 @ z1_aug.T) / m
@@ -29,11 +38,16 @@ def get_edmd(x1: FloatArray, x2: FloatArray, u1: FloatArray, n_basis: int) -> ED
     c_matrix[:24, :24] = np.eye(24, dtype=float)
 
     k_matrix = a_matrix @ np.linalg.pinv(g_matrix)
+    n_lifted = z1.shape[0]
+    n_input = u1.shape[0]
+    bias = k_matrix[:, n_lifted + n_input] if affine else None
     return EDMDModel(
-        A=k_matrix[:, : z1.shape[0]],
-        B=k_matrix[:, z1.shape[0] :],
+        A=k_matrix[:, :n_lifted],
+        B=k_matrix[:, n_lifted : n_lifted + n_input],
         C=c_matrix,
         Z1=z1,
         Z2=z2,
         n_basis=n_basis,
+        bias=bias,
+        affine_enabled=affine,
     )

@@ -13,6 +13,19 @@ from ..utils.linear_algebra import vee_map
 FloatArray = NDArray[np.float64]
 
 
+def _stack_affine_bias(a_matrix: FloatArray, bias: FloatArray, horizon: int) -> FloatArray:
+    if horizon <= 0:
+        return np.zeros(0, dtype=float)
+
+    n_state = a_matrix.shape[0]
+    stacked = np.zeros(n_state * horizon, dtype=float)
+    running = np.zeros(n_state, dtype=float)
+    for step in range(horizon):
+        running = a_matrix @ running + bias
+        stacked[step * n_state : (step + 1) * n_state] = running
+    return stacked
+
+
 def get_qp(
     model: EDMDModel,
     lifted_state: FloatArray,
@@ -56,6 +69,7 @@ def get_qp(
     r_hat = block_diag(*[r_i for _ in range(horizon)])
     s_i = np.diag(config.control_delta_weights())
     s_hat = block_diag(*[s_i for _ in range(horizon)])
+    bias_hat = _stack_affine_bias(a_matrix, model.affine_bias(), horizon)
 
     b_hat = np.zeros((n_state * horizon, n_input * horizon), dtype=float)
     for row in range(horizon):
@@ -92,7 +106,7 @@ def get_qp(
 
     g_matrix = 2.0 * (r_hat + b_hat.T @ q_hat @ b_hat)
     y_vector = lifted_reference.reshape(-1, order="F")
-    f_vector = 2.0 * b_hat.T @ q_hat @ (a_hat @ lifted_state - y_vector)
+    f_vector = 2.0 * b_hat.T @ q_hat @ (a_hat @ lifted_state + bias_hat - y_vector)
 
     delta_matrix = np.zeros((n_input * horizon, n_input * horizon), dtype=float)
     for step in range(horizon):
