@@ -93,61 +93,14 @@ require_running() {
   fi
 }
 
-maybe_generate_drift_analysis() {
+maybe_generate_postrun_analyses() {
   if [[ "${AUTO_DRIFT_ANALYSIS}" != "1" ]]; then
     return 0
   fi
 
-  python - "${CONFIG_PATH}" "${CALLER_WORKDIR}" <<'PY'
-from __future__ import annotations
-
-import json
-import sys
-from pathlib import Path
-
-from quantized_quadrotor_sitl.core.config import load_runtime_config
-from quantized_quadrotor_sitl.experiments.sitl_drift_analysis import analyze_runtime_drift
-
-
-def resolve_path(raw_path: str, base_dir: Path) -> Path:
-    path = Path(raw_path)
-    return path if path.is_absolute() else (base_dir / path)
-
-
-config_path = resolve_path(sys.argv[1], Path(sys.argv[2]))
-config = load_runtime_config(config_path)
-
-if config.controller_mode != "edmd_mpc":
-    print("Skipping drift analysis for non-EDMD controller mode.")
-    raise SystemExit(0)
-
-artifact_path = resolve_path(config.model_artifact, Path(sys.argv[2]))
-results_dir = resolve_path(config.results_dir, Path(sys.argv[2]))
-run_dir = results_dir.resolve(strict=False) if results_dir.name == "latest" else results_dir
-log_path = run_dir / "runtime_log.csv"
-
-if not artifact_path.exists():
-    print(f"Skipping drift analysis because artifact is missing: {artifact_path}")
-    raise SystemExit(0)
-
-if not log_path.exists():
-    print(f"Skipping drift analysis because runtime log is missing: {log_path}")
-    raise SystemExit(0)
-
-summary = analyze_runtime_drift(log_path=log_path, artifact_path=artifact_path)
-print(
-    json.dumps(
-        {
-            "drift_summary_path": str(run_dir / "drift_summary.json"),
-            "drift_trace_path": str(run_dir / "drift_trace.csv"),
-            "selected_branch": summary.get("selected_branch"),
-            "dominant_error_group": summary.get("dominant_error_group"),
-        },
-        indent=2,
-        sort_keys=True,
-    )
-)
-PY
+  python -m quantized_quadrotor_sitl.experiments.sitl_postrun_analysis \
+    --config-path "${CONFIG_PATH}" \
+    --base-dir "${CALLER_WORKDIR}"
 }
 
 if [[ ! -x "${PX4_DIR}/build/px4_sitl_default/bin/px4" ]]; then
@@ -188,7 +141,7 @@ if ! wait "${CONTROLLER_PID}"; then
   CONTROLLER_STATUS=$?
 fi
 
-if ! maybe_generate_drift_analysis; then
-  echo "WARNING: automatic drift analysis failed; runtime_log.csv is still available." >&2
+if ! maybe_generate_postrun_analyses; then
+  echo "WARNING: automatic post-run analysis failed; runtime_log.csv is still available." >&2
 fi
 exit "${CONTROLLER_STATUS}"
