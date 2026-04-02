@@ -303,6 +303,7 @@ def analyze_runtime_control_audit(
         "log_path": str(log_path),
         "metadata_path": str(metadata_path or log_path.with_name("run_metadata.json")),
         "run_name": run.run_name,
+        "cost_state_mode": str(run.run_metadata.get("cost_state_mode", "decoded24_raw")),
         "divergence_time_s": divergence_time_s,
         "active_axis_thresholds_nm": dict(ACTIVE_AXIS_THRESHOLDS),
         "active_sample_count_by_axis": active_sample_count_by_axis,
@@ -348,6 +349,7 @@ def main() -> None:
             {
                 "control_audit_summary_path": str(output_dir / "control_audit_summary.json"),
                 "control_audit_trace_path": str(output_dir / "control_audit_trace.csv"),
+                "cost_state_mode": summary["cost_state_mode"],
                 "mapping_status": summary["mapping_status"],
                 "dominant_mismatch_axis": summary["dominant_mismatch_axis"],
             },

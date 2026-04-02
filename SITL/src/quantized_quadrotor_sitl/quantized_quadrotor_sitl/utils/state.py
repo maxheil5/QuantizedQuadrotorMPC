@@ -17,6 +17,11 @@ def hover_local_translation_rotated(state_coordinates: str | None) -> bool:
     return str(state_coordinates or "") == HOVER_LOCAL_STATE_COORDINATES_ROTATED
 
 
+def _stored_matrix_linearized_vee(stored_matrix: FloatArray) -> FloatArray:
+    stored = np.asarray(stored_matrix, dtype=float).reshape(3, 3, order="F")
+    return vee_map(0.5 * (stored.T - stored))
+
+
 def rotation_from_state18(state: FloatArray) -> FloatArray:
     return np.asarray(state[6:15], dtype=float).reshape(3, 3, order="F")
 
@@ -124,6 +129,60 @@ def decode_lifted_prefix(decoded24: FloatArray) -> tuple[FloatArray, FloatArray,
     r = r_stored.T
     wb = vee_map(wb_hat_stored.T)
     return x, dx, r, wb
+
+
+def decoded24_to_minimal_residual_cost_state(decoded24: FloatArray) -> FloatArray:
+    decoded = np.asarray(decoded24, dtype=float).reshape(24)
+    rotation_stored = decoded[6:15].reshape(3, 3, order="F")
+    wb_hat_stored = decoded[15:24].reshape(3, 3, order="F")
+    return np.concatenate(
+        [
+            decoded[0:3],
+            decoded[3:6],
+            _stored_matrix_linearized_vee(rotation_stored),
+            _stored_matrix_linearized_vee(wb_hat_stored),
+        ]
+    )
+
+
+def decoded24_to_cost_state(decoded24: FloatArray, cost_state_mode: str) -> FloatArray:
+    if cost_state_mode == "decoded24_raw":
+        return np.asarray(decoded24, dtype=float).reshape(24)
+    if cost_state_mode == "minimal_residual":
+        return decoded24_to_minimal_residual_cost_state(decoded24)
+    raise ValueError(f"unsupported MPC cost_state_mode: {cost_state_mode}")
+
+
+def lifted_cost_projection_matrix(lifted_dim: int, cost_state_mode: str) -> FloatArray:
+    if cost_state_mode == "decoded24_raw":
+        projection = np.zeros((24, lifted_dim), dtype=float)
+        projection[:24, :24] = np.eye(24, dtype=float)
+        return projection
+    if cost_state_mode != "minimal_residual":
+        raise ValueError(f"unsupported MPC cost_state_mode: {cost_state_mode}")
+
+    projection = np.zeros((12, lifted_dim), dtype=float)
+    projection[0:3, 0:3] = np.eye(3, dtype=float)
+    projection[3:6, 3:6] = np.eye(3, dtype=float)
+
+    rotation_base = 6
+    wb_base = 15
+    # theta_linear = vee(0.5 * (R_stored^T - R_stored))
+    projection[6, rotation_base + 7] = 0.5
+    projection[6, rotation_base + 5] = -0.5
+    projection[7, rotation_base + 2] = 0.5
+    projection[7, rotation_base + 6] = -0.5
+    projection[8, rotation_base + 3] = 0.5
+    projection[8, rotation_base + 1] = -0.5
+
+    # wb = vee(0.5 * (W_stored^T - W_stored)) for stored W = hat(wb)^T
+    projection[9, wb_base + 7] = 0.5
+    projection[9, wb_base + 5] = -0.5
+    projection[10, wb_base + 2] = 0.5
+    projection[10, wb_base + 6] = -0.5
+    projection[11, wb_base + 3] = 0.5
+    projection[11, wb_base + 1] = -0.5
+    return projection
 
 
 def encode_state24_from_state18(state18: FloatArray) -> FloatArray:

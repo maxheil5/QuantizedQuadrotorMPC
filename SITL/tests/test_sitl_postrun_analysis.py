@@ -70,12 +70,13 @@ def _write_runtime_log(path: Path) -> None:
         writer.writerows(rows)
 
 
-def _write_run_metadata(path: Path, artifact_path: str) -> None:
+def _write_run_metadata(path: Path, artifact_path: str, cost_state_mode: str = "decoded24_raw") -> None:
     payload = {
         "controller_mode": "edmd_mpc",
         "reference_mode": "takeoff_hold",
         "reference_seed": 2141444,
         "reference_duration_s": 10.0,
+        "cost_state_mode": cost_state_mode,
         "model_artifact": artifact_path,
         "quantization_mode": "none",
         "learned_bound_margin_fraction": 0.05,
@@ -143,7 +144,11 @@ def test_run_postrun_edmd_analyses_writes_drift_and_control_sidecars(tmp_path: P
     artifact_path.parent.mkdir(parents=True)
     _write_artifact(artifact_path)
     _write_runtime_log(run_dir / "runtime_log.csv")
-    _write_run_metadata(run_dir / "run_metadata.json", "results/offline/test/edmd_unquantized.npz")
+    _write_run_metadata(
+        run_dir / "run_metadata.json",
+        "results/offline/test/edmd_unquantized.npz",
+        cost_state_mode="minimal_residual",
+    )
     config_path = base_dir / "postrun.yaml"
     config_path.write_text(
         "\n".join(
@@ -151,6 +156,8 @@ def test_run_postrun_edmd_analyses_writes_drift_and_control_sidecars(tmp_path: P
                 "controller_mode: edmd_mpc",
                 "model_artifact: results/offline/test/edmd_unquantized.npz",
                 "results_dir: results/sitl/4-1-26_postrun",
+                "mpc:",
+                "  cost_state_mode: minimal_residual",
             ]
         ),
         encoding="utf-8",
@@ -159,6 +166,7 @@ def test_run_postrun_edmd_analyses_writes_drift_and_control_sidecars(tmp_path: P
     summary = run_postrun_edmd_analyses(config_path=config_path, base_dir=base_dir)
 
     assert summary["skipped"] is False
+    assert summary["cost_state_mode"] == "minimal_residual"
     assert (run_dir / "drift_summary.json").exists()
     assert (run_dir / "drift_trace.csv").exists()
     assert (run_dir / "control_audit_summary.json").exists()

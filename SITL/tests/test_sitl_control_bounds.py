@@ -103,6 +103,64 @@ def test_qp_uses_configured_control_weights_in_hessian():
     npt.assert_allclose(np.diag(g_matrix), np.array([2.5, 16.0, 18.0, 24.0]))
 
 
+def test_minimal_residual_cost_mode_changes_qp_hessian_for_stored_rotation_terms():
+    lifted_state = np.zeros(24, dtype=float)
+    lifted_state[6:15] = np.eye(3, dtype=float).reshape(-1, order="F")
+    lifted_reference = lifted_state[:, None]
+
+    model = EDMDModel(
+        A=np.eye(24, dtype=float),
+        B=np.zeros((24, 4), dtype=float),
+        C=np.eye(24, dtype=float),
+        Z1=np.zeros((24, 1), dtype=float),
+        Z2=np.zeros((24, 1), dtype=float),
+        n_basis=0,
+    )
+    model.B[11, 0] = 1.0
+    model.B[13, 0] = -1.0
+
+    raw_config = MPCConfig(
+        cost_state_mode="decoded24_raw",
+        position_error_weights_diag=[0.0, 0.0, 0.0],
+        velocity_error_weights_diag=[0.0, 0.0, 0.0],
+        attitude_error_weight=100.0,
+        angular_velocity_error_weight=0.0,
+        control_weights_diag=[0.0, 0.0, 0.0, 0.0],
+        control_delta_weights_diag=[0.0, 0.0, 0.0, 0.0],
+    )
+    minimal_config = MPCConfig(
+        cost_state_mode="minimal_residual",
+        position_error_weights_diag=[0.0, 0.0, 0.0],
+        velocity_error_weights_diag=[0.0, 0.0, 0.0],
+        attitude_error_weight=100.0,
+        angular_velocity_error_weight=0.0,
+        control_weights_diag=[0.0, 0.0, 0.0, 0.0],
+        control_delta_weights_diag=[0.0, 0.0, 0.0, 0.0],
+    )
+
+    _, g_raw, _, _ = get_qp(
+        model,
+        lifted_state,
+        lifted_reference,
+        1,
+        raw_config,
+        np.full(4, -5.0, dtype=float),
+        np.full(4, 5.0, dtype=float),
+    )
+    _, g_minimal, _, _ = get_qp(
+        model,
+        lifted_state,
+        lifted_reference,
+        1,
+        minimal_config,
+        np.full(4, -5.0, dtype=float),
+        np.full(4, 5.0, dtype=float),
+    )
+
+    assert g_raw[0, 0] != g_minimal[0, 0]
+    assert g_minimal[0, 0] < g_raw[0, 0]
+
+
 def test_runtime_edmd_control_bounds_preserve_default_sitl_limits_without_metadata():
     scaling = VehicleScalingConfig(max_collective_thrust_newton=62.0, max_body_torque_x_nm=1.0, max_body_torque_y_nm=1.0, max_body_torque_z_nm=0.6)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 
 import numpy as np
@@ -82,17 +83,20 @@ def _write_runtime_log(
         writer.writerows(rows)
 
 
-def _write_run_metadata(path: Path) -> None:
+def _write_run_metadata(path: Path, cost_state_mode: str = "decoded24_raw") -> None:
     path.write_text(
-        """{
-  "vehicle_scaling": {
-    "max_collective_thrust_newton": 62.0,
-    "max_body_torque_x_nm": 1.0,
-    "max_body_torque_y_nm": 1.0,
-    "max_body_torque_z_nm": 0.6
-  }
-}
-""",
+        json.dumps(
+            {
+                "cost_state_mode": cost_state_mode,
+                "vehicle_scaling": {
+                    "max_collective_thrust_newton": 62.0,
+                    "max_body_torque_x_nm": 1.0,
+                    "max_body_torque_y_nm": 1.0,
+                    "max_body_torque_z_nm": 0.6,
+                },
+            },
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
@@ -289,3 +293,24 @@ def test_analyze_runtime_drift_reports_post_four_second_bound_activity_for_resid
     assert summary["residual_enabled"] is True
     assert summary["post_4s_internal_bound_fraction"]["u0"] > 0.0
     assert summary["post_4s_internal_bound_fraction"]["u1"] > 0.0
+
+
+def test_analyze_runtime_drift_reports_minimal_residual_cost_state_mode(tmp_path: Path):
+    run_dir = tmp_path / "4-1-26_minimal"
+    run_dir.mkdir()
+    log_path = run_dir / "runtime_log.csv"
+    artifact_path = tmp_path / "results" / "offline" / "edmd_unquantized.npz"
+    artifact_path.parent.mkdir(parents=True)
+
+    _write_artifact(artifact_path, _identity_model(), rmse_values=(1.0, 1.0, 1.0, 1.0))
+    _write_run_metadata(run_dir / "run_metadata.json", cost_state_mode="minimal_residual")
+    _write_runtime_log(
+        log_path,
+        states=[_identity_state18(0.0), _identity_state18(0.1)],
+        references=[_identity_state18(0.0), _identity_state18(0.1)],
+        controls=[[2.0, 0.0, 0.0, 0.0], [2.0, 0.0, 0.0, 0.0]],
+    )
+
+    summary = analyze_runtime_drift(log_path, artifact_path)
+
+    assert summary["cost_state_mode"] == "minimal_residual"

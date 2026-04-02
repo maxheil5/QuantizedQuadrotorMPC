@@ -4,9 +4,12 @@ import numpy as np
 import numpy.testing as npt
 
 from quantized_quadrotor_sitl.experiments.runtime_reference import build_takeoff_hold_reference
+from quantized_quadrotor_sitl.utils.linear_algebra import hat_map
 from quantized_quadrotor_sitl.utils.state import (
     HOVER_LOCAL_STATE_COORDINATES_ROTATED,
+    decoded24_to_minimal_residual_cost_state,
     hover_local_translation_rotated,
+    lifted_cost_projection_matrix,
     state18_from_hover_local_residual,
     state18_history_to_hover_local_residual,
     state18_to_hover_local_residual,
@@ -116,3 +119,33 @@ def test_hover_local_residual_can_rotate_translation_into_trim_frame():
 def test_hover_local_translation_rotation_helper_detects_v2_coordinates():
     assert hover_local_translation_rotated(HOVER_LOCAL_STATE_COORDINATES_ROTATED) is True
     assert hover_local_translation_rotated("takeoff_hold_hover_local") is False
+
+
+def test_minimal_residual_cost_state_recovers_small_angle_theta_and_body_rate():
+    theta = np.array([0.02, -0.03, 0.04], dtype=float)
+    wb = np.array([-0.10, 0.20, -0.30], dtype=float)
+    decoded24 = np.zeros(24, dtype=float)
+    decoded24[0:3] = np.array([1.0, -2.0, 3.0], dtype=float)
+    decoded24[3:6] = np.array([0.5, -0.25, 0.75], dtype=float)
+    rotation_stored = np.eye(3, dtype=float) - hat_map(theta)
+    wb_hat_stored = hat_map(wb).T
+    decoded24[6:15] = rotation_stored.reshape(-1, order="F")
+    decoded24[15:24] = wb_hat_stored.reshape(-1, order="F")
+
+    cost_state = decoded24_to_minimal_residual_cost_state(decoded24)
+
+    npt.assert_allclose(cost_state[0:6], decoded24[0:6], atol=1.0e-12)
+    npt.assert_allclose(cost_state[6:9], theta, atol=1.0e-12)
+    npt.assert_allclose(cost_state[9:12], wb, atol=1.0e-12)
+
+
+def test_minimal_residual_projection_matrix_matches_direct_cost_state_projection():
+    decoded24 = np.zeros(24, dtype=float)
+    decoded24[0:3] = np.array([0.1, 0.2, 0.3], dtype=float)
+    decoded24[3:6] = np.array([0.4, 0.5, 0.6], dtype=float)
+    decoded24[6:15] = (np.eye(3, dtype=float) - hat_map(np.array([0.01, 0.02, -0.03], dtype=float))).reshape(-1, order="F")
+    decoded24[15:24] = hat_map(np.array([0.2, -0.1, 0.05], dtype=float)).T.reshape(-1, order="F")
+
+    projection = lifted_cost_projection_matrix(24, "minimal_residual")
+
+    npt.assert_allclose(projection @ decoded24, decoded24_to_minimal_residual_cost_state(decoded24), atol=1.0e-12)

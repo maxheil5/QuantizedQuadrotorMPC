@@ -18,6 +18,7 @@ class MPCConfig:
     sim_timestep: float = 1.0e-3
     sim_duration: float = 1.2
     use_casadi: bool = False
+    cost_state_mode: str = "decoded24_raw"
     position_error_weights_diag: list[float] = field(default_factory=lambda: [1.0e4, 1.0e4, 1.0e2])
     velocity_error_weights_diag: list[float] = field(default_factory=lambda: [1.0e2, 1.0e2, 1.0e2])
     attitude_error_weight: float = 1.0e2

@@ -15,9 +15,9 @@ from ..edmd.basis import lift_state
 from ..utils.control_bounds import runtime_edmd_control_coordinates
 from ..utils.io import write_csv, write_json
 from ..utils.linear_algebra import vee_map
-from ..utils.metrics import rmse
+from ..utils.metrics import normalized_rmse
 from ..utils.state import takeoff_hold_trim_state18
-from ..utils.state import decode_lifted_prefix, encode_state24_from_state18, hover_local_translation_rotated
+from ..utils.state import decode_lifted_prefix, decoded24_to_cost_state, encode_state24_from_state18, hover_local_translation_rotated
 from .sitl_dataset import SITLRunDataset, load_sitl_run_dataset, transform_sitl_run_dataset_to_hover_local_residual
 
 
@@ -34,7 +34,19 @@ DIVERGENCE_ALTITUDE_ERROR_THRESHOLD_M = 0.5
 DIVERGENCE_POSITION_ERROR_THRESHOLD_M = 1.0
 
 
-def _decoded_groups(decoded_state: np.ndarray) -> dict[str, np.ndarray]:
+def _cost_state_mode_from_run(run: SITLRunDataset) -> str:
+    return str(run.run_metadata.get("cost_state_mode", "decoded24_raw"))
+
+
+def _decoded_groups(decoded_state: np.ndarray, cost_state_mode: str) -> dict[str, np.ndarray]:
+    if cost_state_mode == "minimal_residual":
+        cost_state = decoded24_to_cost_state(decoded_state, cost_state_mode)
+        return {
+            "x": np.asarray(cost_state[0:3], dtype=float).reshape(3),
+            "dx": np.asarray(cost_state[3:6], dtype=float).reshape(3),
+            "theta": np.asarray(cost_state[6:9], dtype=float).reshape(3),
+            "wb": np.asarray(cost_state[9:12], dtype=float).reshape(3),
+        }
     x, dx, r_matrix, wb = decode_lifted_prefix(decoded_state)
     theta = vee_map(logm(r_matrix))
     return {
@@ -45,13 +57,34 @@ def _decoded_groups(decoded_state: np.ndarray) -> dict[str, np.ndarray]:
     }
 
 
-def _group_error_norms(predicted_decoded: np.ndarray, reference_decoded: np.ndarray) -> dict[str, float]:
-    predicted_groups = _decoded_groups(predicted_decoded)
-    reference_groups = _decoded_groups(reference_decoded)
+def _group_error_norms(predicted_decoded: np.ndarray, reference_decoded: np.ndarray, cost_state_mode: str) -> dict[str, float]:
+    predicted_groups = _decoded_groups(predicted_decoded, cost_state_mode)
+    reference_groups = _decoded_groups(reference_decoded, cost_state_mode)
     return {
         key: float(np.linalg.norm(predicted_groups[key] - reference_groups[key]))
         for key in ("x", "dx", "theta", "wb")
     }
+
+
+def _rmse_breakdown_for_cost_mode(
+    decoded_prediction: np.ndarray,
+    decoded_reference: np.ndarray,
+    cost_state_mode: str,
+) -> RMSEBreakdown:
+    groups_pred: dict[str, list[np.ndarray]] = {key: [] for key in ("x", "dx", "theta", "wb")}
+    groups_ref: dict[str, list[np.ndarray]] = {key: [] for key in ("x", "dx", "theta", "wb")}
+    for idx in range(decoded_prediction.shape[1]):
+        predicted = _decoded_groups(decoded_prediction[:, idx], cost_state_mode)
+        reference = _decoded_groups(decoded_reference[:, idx], cost_state_mode)
+        for key in groups_pred:
+            groups_pred[key].append(predicted[key])
+            groups_ref[key].append(reference[key])
+    return RMSEBreakdown(
+        x=normalized_rmse(np.column_stack(groups_pred["x"]), np.column_stack(groups_ref["x"])),
+        dx=normalized_rmse(np.column_stack(groups_pred["dx"]), np.column_stack(groups_ref["dx"])),
+        theta=normalized_rmse(np.column_stack(groups_pred["theta"]), np.column_stack(groups_ref["theta"])),
+        wb=normalized_rmse(np.column_stack(groups_pred["wb"]), np.column_stack(groups_ref["wb"])),
+    )
 
 
 def _artifact_eval_rmse(artifact_path: Path) -> RMSEBreakdown:
@@ -181,6 +214,7 @@ def analyze_runtime_drift(
 ) -> dict[str, object]:
     run = load_sitl_run_dataset(log_path, state_source="used", control_source="used")
     model, metadata = load_edmd_artifact(artifact_path)
+    cost_state_mode = _cost_state_mode_from_run(run)
     residual_enabled = bool(metadata.get("residual_enabled", False))
     analysis_run = run
     if residual_enabled:
@@ -228,8 +262,8 @@ def analyze_runtime_drift(
         replay_decoded = model.C @ replay_lifted
         replay_reference = encode_state24_from_state18(analysis_run.state_history[:, idx + replay_steps])
 
-        one_step_errors = _group_error_norms(one_step_decoded, one_step_reference)
-        replay_errors = _group_error_norms(replay_decoded, replay_reference)
+        one_step_errors = _group_error_norms(one_step_decoded, one_step_reference, cost_state_mode)
+        replay_errors = _group_error_norms(replay_decoded, replay_reference, cost_state_mode)
 
         trace_row: dict[str, object] = {
             "step": idx,
@@ -255,7 +289,11 @@ def analyze_runtime_drift(
     early_mask = prediction_time_s <= float(early_window_s)
     if not np.any(early_mask):
         early_mask = np.ones_like(prediction_time_s, dtype=bool)
-    early_rmse = rmse(one_step_predicted_history[:, early_mask], one_step_reference_history[:, early_mask])
+    early_rmse = _rmse_breakdown_for_cost_mode(
+        one_step_predicted_history[:, early_mask],
+        one_step_reference_history[:, early_mask],
+        cost_state_mode,
+    )
     early_window_rmse_ratio = {
         "x": float(early_rmse.x / max(artifact_eval.x, 1.0e-12)),
         "dx": float(early_rmse.dx / max(artifact_eval.dx, 1.0e-12)),
@@ -282,6 +320,7 @@ def analyze_runtime_drift(
         "run_name": run.run_name,
         "log_path": str(Path(log_path)),
         "artifact_path": str(Path(artifact_path)),
+        "cost_state_mode": cost_state_mode,
         "residual_enabled": residual_enabled,
         "replay_horizon_steps": int(replay_horizon_steps),
         "early_window_s": float(early_window_s),

@@ -4,6 +4,7 @@ from quantized_quadrotor_sitl.core.config import hover_local_v1_profile, load_ru
 
 
 RESIDUAL_ARTIFACT_PATH = "results/offline/sitl_baseline_v1/20260401T234823Z_sitl_id_v7_hovercentered_affine/edmd_unquantized.npz"
+ROTATED_RESIDUAL_ARTIFACT_PATH = "results/offline/sitl_baseline_v1/20260402T013459Z_sitl_id_v7_hovercentered_affine_rotated/edmd_unquantized.npz"
 
 
 def test_matlab_profile_matches_v2_defaults():
@@ -62,6 +63,7 @@ def test_runtime_config_includes_estimator_topic_defaults():
     assert config.mpc.angular_velocity_error_weight == 150.0
     assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
     assert config.mpc.control_delta_weights_diag == [1.0, 6.0, 6.0, 8.0]
+    assert config.mpc.cost_state_mode == "decoded24_raw"
     assert config.vehicle_odometry_topic == "/fmu/out/vehicle_odometry"
     assert config.vehicle_local_position_topic == "/fmu/out/vehicle_local_position"
     assert config.vehicle_attitude_topic == "/fmu/out/vehicle_attitude"
@@ -110,6 +112,22 @@ def test_sitl_retrained_edmd_light_latest_runtime_config_tracks_latest_retrain_a
     assert config.mpc.velocity_error_weights_diag == [40.0, 40.0, 200.0]
     assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
     assert config.mpc.control_delta_weights_diag == [1.0, 6.0, 6.0, 8.0]
+    assert config.mpc.cost_state_mode == "decoded24_raw"
+
+
+def test_sitl_retrained_edmd_light_minimal_residual_runtime_config_pins_rotated_artifact():
+    config = load_runtime_config(Path("SITL/configs/sitl_runtime_sitl_retrain_edmd_light_minimal_residual.yaml"))
+    assert config.controller_mode == "edmd_mpc"
+    assert config.model_artifact == ROTATED_RESIDUAL_ARTIFACT_PATH
+    assert config.reference_mode == "takeoff_hold"
+    assert config.control_rate_hz == 50.0
+    assert config.learned_bound_margin_fraction == 0.05
+    assert config.mpc.pred_horizon == 8
+    assert config.mpc.position_error_weights_diag == [250.0, 250.0, 5000.0]
+    assert config.mpc.velocity_error_weights_diag == [40.0, 40.0, 200.0]
+    assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
+    assert config.mpc.control_delta_weights_diag == [1.0, 6.0, 6.0, 8.0]
+    assert config.mpc.cost_state_mode == "minimal_residual"
 
 
 def test_sitl_retrained_edmd_light_tuned_runtime_config_pins_artifact_and_tunes_lateral_weights():

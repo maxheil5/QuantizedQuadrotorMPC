@@ -45,6 +45,7 @@ def run_postrun_edmd_analyses(config_path: Path, base_dir: Path) -> dict[str, ob
     control_summary = analyze_runtime_control_audit(log_path=log_path, artifact_path=artifact_path, output_dir=run_dir)
     return {
         "skipped": False,
+        "cost_state_mode": drift_summary.get("cost_state_mode"),
         "drift_summary_path": str(run_dir / "drift_summary.json"),
         "drift_trace_path": str(run_dir / "drift_trace.csv"),
         "selected_branch": drift_summary.get("selected_branch"),

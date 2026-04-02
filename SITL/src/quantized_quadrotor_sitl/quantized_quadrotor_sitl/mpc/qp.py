@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.linalg import block_diag, logm
+from scipy.linalg import block_diag
 from scipy import sparse
 
 from ..core.config import MPCConfig
 from ..core.types import EDMDModel
-from ..utils.linear_algebra import vee_map
+from ..utils.state import lifted_cost_projection_matrix
 
 
 FloatArray = NDArray[np.float64]
@@ -26,6 +26,23 @@ def _stack_affine_bias(a_matrix: FloatArray, bias: FloatArray, horizon: int) -> 
     return stacked
 
 
+def _stage_cost_matrix(lifted_dim: int, config: MPCConfig) -> FloatArray:
+    qx = np.diag(config.position_error_weights())
+    qv = np.diag(config.velocity_error_weights())
+    if config.cost_state_mode == "decoded24_raw":
+        qa = float(config.attitude_error_weight) * np.eye(9)
+        qw = float(config.angular_velocity_error_weight) * np.eye(9)
+        weight_matrix = block_diag(qx, qv, qa, qw)
+    elif config.cost_state_mode == "minimal_residual":
+        qa = float(config.attitude_error_weight) * np.eye(3)
+        qw = float(config.angular_velocity_error_weight) * np.eye(3)
+        weight_matrix = block_diag(qx, qv, qa, qw)
+    else:
+        raise ValueError(f"unsupported MPC cost_state_mode: {config.cost_state_mode}")
+    projection = lifted_cost_projection_matrix(lifted_dim, config.cost_state_mode)
+    return projection.T @ weight_matrix @ projection
+
+
 def get_qp(
     model: EDMDModel,
     lifted_state: FloatArray,
@@ -38,24 +55,10 @@ def get_qp(
 ) -> tuple[FloatArray, FloatArray, sparse.csc_matrix, FloatArray]:
     a_matrix = model.A
     b_matrix = model.B
-    c_matrix = model.C
     n_state = a_matrix.shape[1]
     n_input = b_matrix.shape[1]
 
-    decoded = c_matrix @ lifted_state
-    _ = decoded[0:3]
-    _ = decoded[3:6]
-    r_matrix = decoded[6:15].reshape(3, 3, order="F")
-    _ = vee_map(logm(r_matrix.T))
-    wb_hat = decoded[15:24].reshape(3, 3, order="F")
-    _ = vee_map(wb_hat.T)
-
-    qx = np.diag(config.position_error_weights())
-    qv = np.diag(config.velocity_error_weights())
-    qa = float(config.attitude_error_weight) * np.eye(9)
-    qw = float(config.angular_velocity_error_weight) * np.eye(9)
-    q_i = np.zeros((lifted_state.shape[0], lifted_state.shape[0]), dtype=float)
-    q_i[:24, :24] = block_diag(qx, qv, qa, qw)
+    q_i = _stage_cost_matrix(lifted_state.shape[0], config)
     p_terminal = q_i.copy()
     r_i = np.diag(config.control_weights())
 

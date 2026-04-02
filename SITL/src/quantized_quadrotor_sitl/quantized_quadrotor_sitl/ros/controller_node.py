@@ -248,6 +248,7 @@ class ControllerNode(Node):
             "reference_mode": self.config.reference_mode,
             "reference_seed": int(self.config.reference_seed),
             "reference_duration_s": float(self.config.reference_duration_s),
+            "cost_state_mode": self.config.mpc.cost_state_mode,
             "model_artifact": self.config.model_artifact,
             "model_affine_enabled": bool(self.model.affine_enabled) if self.model is not None else False,
             "model_residual_enabled": bool(self.residual_enabled),
