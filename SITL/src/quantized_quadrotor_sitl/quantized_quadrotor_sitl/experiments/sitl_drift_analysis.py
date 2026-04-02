@@ -17,7 +17,7 @@ from ..utils.io import write_csv, write_json
 from ..utils.linear_algebra import vee_map
 from ..utils.metrics import rmse
 from ..utils.state import takeoff_hold_trim_state18
-from ..utils.state import decode_lifted_prefix, encode_state24_from_state18
+from ..utils.state import decode_lifted_prefix, encode_state24_from_state18, hover_local_translation_rotated
 from .sitl_dataset import SITLRunDataset, load_sitl_run_dataset, transform_sitl_run_dataset_to_hover_local_residual
 
 
@@ -188,9 +188,18 @@ def analyze_runtime_drift(
         state_coordinates = run.run_metadata.get("state_coordinates", {})
         if isinstance(state_coordinates, dict) and state_coordinates.get("runtime_state_trim"):
             runtime_trim = np.asarray(state_coordinates["runtime_state_trim"], dtype=float).reshape(18)
+        rotate_translation = False
+        if isinstance(state_coordinates, dict):
+            rotate_translation = hover_local_translation_rotated(state_coordinates.get("state_coordinates"))
+        elif "state_coordinates" in metadata:
+            rotate_translation = hover_local_translation_rotated(metadata.get("state_coordinates"))
         if runtime_trim is None:
             runtime_trim = takeoff_hold_trim_state18(run.state_history[:, 0])
-        analysis_run = transform_sitl_run_dataset_to_hover_local_residual(run, runtime_trim)
+        analysis_run = transform_sitl_run_dataset_to_hover_local_residual(
+            run,
+            runtime_trim,
+            rotate_translation=rotate_translation,
+        )
     scaling = _vehicle_scaling_from_run(run)
     coordinates = runtime_edmd_control_coordinates(
         scaling,

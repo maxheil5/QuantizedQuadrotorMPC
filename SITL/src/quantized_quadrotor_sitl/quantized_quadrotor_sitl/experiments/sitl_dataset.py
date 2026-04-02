@@ -11,7 +11,10 @@ from ..core.types import EDMDModel, RMSEBreakdown
 from ..edmd.basis import lift_state
 from ..utils.metrics import rmse
 from ..utils.state import (
+    HOVER_LOCAL_STATE_COORDINATES_LEGACY,
+    HOVER_LOCAL_STATE_COORDINATES_ROTATED,
     encode_state24_from_state18,
+    hover_local_translation_rotated,
     state18_history_to_hover_local_residual,
     takeoff_hold_trim_state18,
 )
@@ -98,18 +101,39 @@ def takeoff_hold_trim_from_run(run: SITLRunDataset, hover_altitude_delta_m: floa
 def transform_sitl_run_dataset_to_hover_local_residual(
     run: SITLRunDataset,
     trim_state18: np.ndarray | None = None,
+    rotate_translation: bool | None = None,
 ) -> SITLRunDataset:
     trim = takeoff_hold_trim_from_run(run) if trim_state18 is None else np.asarray(trim_state18, dtype=float).reshape(18)
+    rotate_translation_enabled = (
+        hover_local_translation_rotated(run.run_metadata.get("state_coordinates"))
+        if rotate_translation is None
+        else bool(rotate_translation)
+    )
     return SITLRunDataset(
         run_name=run.run_name,
         log_path=run.log_path,
-        state_history=state18_history_to_hover_local_residual(run.state_history, trim),
+        state_history=state18_history_to_hover_local_residual(
+            run.state_history,
+            trim,
+            rotate_translation=rotate_translation_enabled,
+        ),
         control_history=run.control_history.copy(),
-        reference_history=state18_history_to_hover_local_residual(run.reference_history, trim),
+        reference_history=state18_history_to_hover_local_residual(
+            run.reference_history,
+            trim,
+            rotate_translation=rotate_translation_enabled,
+        ),
         experiment_time_s=run.experiment_time_s.copy(),
         tick_dt_ms=run.tick_dt_ms.copy(),
         solver_ms=run.solver_ms.copy(),
-        run_metadata=dict(run.run_metadata),
+        run_metadata={
+            **dict(run.run_metadata),
+            "state_coordinates": (
+                HOVER_LOCAL_STATE_COORDINATES_ROTATED
+                if rotate_translation_enabled
+                else HOVER_LOCAL_STATE_COORDINATES_LEGACY
+            ),
+        },
         control_internal_history=None if run.control_internal_history is None else run.control_internal_history.copy(),
         residual_enabled=True,
         state_trim=trim,

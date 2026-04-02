@@ -98,6 +98,20 @@ def test_sitl_retrained_edmd_light_runtime_config_reduces_solver_load():
     assert config.mpc.control_delta_weights_diag == [1.0, 6.0, 6.0, 8.0]
 
 
+def test_sitl_retrained_edmd_light_latest_runtime_config_tracks_latest_retrain_artifact():
+    config = load_runtime_config(Path("SITL/configs/sitl_runtime_sitl_retrain_edmd_light_latest.yaml"))
+    assert config.controller_mode == "edmd_mpc"
+    assert config.model_artifact == "results/offline/sitl_baseline_v1/latest/edmd_unquantized.npz"
+    assert config.reference_mode == "takeoff_hold"
+    assert config.control_rate_hz == 50.0
+    assert config.learned_bound_margin_fraction == 0.05
+    assert config.mpc.pred_horizon == 8
+    assert config.mpc.position_error_weights_diag == [250.0, 250.0, 5000.0]
+    assert config.mpc.velocity_error_weights_diag == [40.0, 40.0, 200.0]
+    assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
+    assert config.mpc.control_delta_weights_diag == [1.0, 6.0, 6.0, 8.0]
+
+
 def test_sitl_retrained_edmd_light_tuned_runtime_config_pins_artifact_and_tunes_lateral_weights():
     config = load_runtime_config(Path("SITL/configs/sitl_runtime_sitl_retrain_edmd_light_tuned.yaml"))
     assert config.controller_mode == "edmd_mpc"

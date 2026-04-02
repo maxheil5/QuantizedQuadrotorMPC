@@ -9,6 +9,12 @@ from .linear_algebra import vee_map
 
 
 FloatArray = NDArray[np.float64]
+HOVER_LOCAL_STATE_COORDINATES_LEGACY = "takeoff_hold_hover_local"
+HOVER_LOCAL_STATE_COORDINATES_ROTATED = "takeoff_hold_hover_local_rotated"
+
+
+def hover_local_translation_rotated(state_coordinates: str | None) -> bool:
+    return str(state_coordinates or "") == HOVER_LOCAL_STATE_COORDINATES_ROTATED
 
 
 def rotation_from_state18(state: FloatArray) -> FloatArray:
@@ -28,56 +34,85 @@ def takeoff_hold_trim_state18(state18: FloatArray, hover_altitude_delta_m: float
     return trim
 
 
-def state18_to_hover_local_residual(state18: FloatArray, trim_state18: FloatArray) -> FloatArray:
+def state18_to_hover_local_residual(
+    state18: FloatArray,
+    trim_state18: FloatArray,
+    rotate_translation: bool = False,
+) -> FloatArray:
     state = np.asarray(state18, dtype=float).reshape(18)
     trim = np.asarray(trim_state18, dtype=float).reshape(18)
     rotation = rotation_from_state18(state)
     trim_rotation = rotation_from_state18(trim)
     rotation_delta = trim_rotation.T @ rotation
+    position_delta = state[0:3] - trim[0:3]
+    velocity_delta = state[3:6] - trim[3:6]
+    if rotate_translation:
+        position_delta = trim_rotation.T @ position_delta
+        velocity_delta = trim_rotation.T @ velocity_delta
     return np.concatenate(
         [
-            state[0:3] - trim[0:3],
-            state[3:6] - trim[3:6],
+            position_delta,
+            velocity_delta,
             rotation_delta.reshape(-1, order="F"),
             state[15:18] - trim[15:18],
         ]
     )
 
 
-def state18_from_hover_local_residual(residual_state18: FloatArray, trim_state18: FloatArray) -> FloatArray:
+def state18_from_hover_local_residual(
+    residual_state18: FloatArray,
+    trim_state18: FloatArray,
+    rotate_translation: bool = False,
+) -> FloatArray:
     residual = np.asarray(residual_state18, dtype=float).reshape(18)
     trim = np.asarray(trim_state18, dtype=float).reshape(18)
     trim_rotation = rotation_from_state18(trim)
     rotation_delta = rotation_from_state18(residual)
     rotation = trim_rotation @ rotation_delta
+    position = residual[0:3]
+    velocity = residual[3:6]
+    if rotate_translation:
+        position = trim_rotation @ position
+        velocity = trim_rotation @ velocity
     return np.concatenate(
         [
-            residual[0:3] + trim[0:3],
-            residual[3:6] + trim[3:6],
+            position + trim[0:3],
+            velocity + trim[3:6],
             rotation.reshape(-1, order="F"),
             residual[15:18] + trim[15:18],
         ]
     )
 
 
-def state18_history_to_hover_local_residual(state_history: FloatArray, trim_state18: FloatArray) -> FloatArray:
+def state18_history_to_hover_local_residual(
+    state_history: FloatArray,
+    trim_state18: FloatArray,
+    rotate_translation: bool = False,
+) -> FloatArray:
     history = np.asarray(state_history, dtype=float)
     if history.ndim != 2 or history.shape[0] != 18:
         raise ValueError("state_history must have shape (18, N)")
     return np.column_stack(
-        [state18_to_hover_local_residual(history[:, idx], trim_state18) for idx in range(history.shape[1])]
+        [
+            state18_to_hover_local_residual(history[:, idx], trim_state18, rotate_translation=rotate_translation)
+            for idx in range(history.shape[1])
+        ]
     )
 
 
 def state18_history_from_hover_local_residual(
     residual_state_history: FloatArray,
     trim_state18: FloatArray,
+    rotate_translation: bool = False,
 ) -> FloatArray:
     history = np.asarray(residual_state_history, dtype=float)
     if history.ndim != 2 or history.shape[0] != 18:
         raise ValueError("residual_state_history must have shape (18, N)")
     return np.column_stack(
-        [state18_from_hover_local_residual(history[:, idx], trim_state18) for idx in range(history.shape[1])]
+        [
+            state18_from_hover_local_residual(history[:, idx], trim_state18, rotate_translation=rotate_translation)
+            for idx in range(history.shape[1])
+        ]
     )
 
 

@@ -5,6 +5,8 @@ import numpy.testing as npt
 
 from quantized_quadrotor_sitl.experiments.runtime_reference import build_takeoff_hold_reference
 from quantized_quadrotor_sitl.utils.state import (
+    HOVER_LOCAL_STATE_COORDINATES_ROTATED,
+    hover_local_translation_rotated,
     state18_from_hover_local_residual,
     state18_history_to_hover_local_residual,
     state18_to_hover_local_residual,
@@ -88,3 +90,29 @@ def test_takeoff_hold_reference_transforms_to_zero_residual_at_hover_trim():
     npt.assert_allclose(final_column[3:6], np.zeros(3, dtype=float), atol=1.0e-9)
     npt.assert_allclose(final_column[6:15].reshape(3, 3, order="F"), np.eye(3, dtype=float), atol=1.0e-9)
     npt.assert_allclose(final_column[15:18], np.zeros(3, dtype=float), atol=1.0e-9)
+
+
+def test_hover_local_residual_can_rotate_translation_into_trim_frame():
+    trim_rotation = _rotation_z(np.pi / 2.0)
+    trim_state = _state18(
+        position=np.array([1.0, 2.0, 0.75], dtype=float),
+        velocity=np.zeros(3, dtype=float),
+        rotation=trim_rotation,
+        wb=np.zeros(3, dtype=float),
+    )
+    raw_state = _state18(
+        position=np.array([2.0, 2.0, 1.25], dtype=float),
+        velocity=np.array([1.0, 0.0, 0.0], dtype=float),
+        rotation=trim_rotation,
+        wb=np.zeros(3, dtype=float),
+    )
+
+    residual_state = state18_to_hover_local_residual(raw_state, trim_state, rotate_translation=True)
+
+    npt.assert_allclose(residual_state[0:3], np.array([0.0, -1.0, 0.5], dtype=float), atol=1.0e-9)
+    npt.assert_allclose(residual_state[3:6], np.array([0.0, -1.0, 0.0], dtype=float), atol=1.0e-9)
+
+
+def test_hover_local_translation_rotation_helper_detects_v2_coordinates():
+    assert hover_local_translation_rotated(HOVER_LOCAL_STATE_COORDINATES_ROTATED) is True
+    assert hover_local_translation_rotated("takeoff_hold_hover_local") is False

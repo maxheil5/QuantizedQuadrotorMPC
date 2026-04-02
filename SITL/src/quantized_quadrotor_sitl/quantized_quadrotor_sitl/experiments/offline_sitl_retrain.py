@@ -16,6 +16,7 @@ from .sitl_dataset import (
     load_sitl_run_dataset,
     transform_sitl_run_dataset_to_hover_local_residual,
 )
+from ..utils.state import HOVER_LOCAL_STATE_COORDINATES_ROTATED
 
 
 def _resolve_run_spec(runs_root: Path, raw_spec: str) -> Path:
@@ -42,12 +43,12 @@ def run_sitl_retrain(
     train_physical_datasets = [load_sitl_run_dataset(path, state_source=state_source, control_source=control_source) for path in train_runs]
     eval_physical_datasets = [load_sitl_run_dataset(path, state_source=state_source, control_source=control_source) for path in eval_runs]
     train_datasets = (
-        [transform_sitl_run_dataset_to_hover_local_residual(dataset) for dataset in train_physical_datasets]
+        [transform_sitl_run_dataset_to_hover_local_residual(dataset, rotate_translation=True) for dataset in train_physical_datasets]
         if hover_residual
         else train_physical_datasets
     )
     eval_datasets = (
-        [transform_sitl_run_dataset_to_hover_local_residual(dataset) for dataset in eval_physical_datasets]
+        [transform_sitl_run_dataset_to_hover_local_residual(dataset, rotate_translation=True) for dataset in eval_physical_datasets]
         if hover_residual
         else eval_physical_datasets
     )
@@ -85,7 +86,7 @@ def run_sitl_retrain(
     }
     if hover_residual:
         artifact_payload["residual_enabled"] = np.array([1.0], dtype=float)
-        artifact_payload["state_coordinates"] = np.array(["takeoff_hold_hover_local"])
+        artifact_payload["state_coordinates"] = np.array([HOVER_LOCAL_STATE_COORDINATES_ROTATED])
         artifact_payload["state_trim_mode"] = np.array(["per_run_takeoff_hold_final"])
         if state_trim_mean is not None:
             artifact_payload["state_trim"] = state_trim_mean
@@ -169,7 +170,7 @@ def run_sitl_retrain(
             "u_train_std": u_train_std.reshape(-1).tolist(),
             "u_trim": u_trim.reshape(-1).tolist(),
             "residual_enabled": bool(hover_residual),
-            "state_coordinates": "takeoff_hold_hover_local" if hover_residual else "absolute_state18",
+            "state_coordinates": HOVER_LOCAL_STATE_COORDINATES_ROTATED if hover_residual else "absolute_state18",
             "state_trim_mode": "per_run_takeoff_hold_final" if hover_residual else "none",
             "state_trim": [] if state_trim_mean is None else state_trim_mean.reshape(-1).tolist(),
             "bias": model.affine_bias().reshape(-1).tolist() if model.affine_enabled else [],

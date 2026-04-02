@@ -186,11 +186,11 @@ def test_run_sitl_retrain_can_emit_hover_residual_artifact_metadata(tmp_path: Pa
 
     assert summary["hover_residual"] is True
     assert summary["residual_enabled"] is True
-    assert summary["state_coordinates"] == "takeoff_hold_hover_local"
+    assert summary["state_coordinates"] == "takeoff_hold_hover_local_rotated"
     assert summary["state_trim_mode"] == "per_run_takeoff_hold_final"
     assert len(summary["state_trim"]) == 18
     assert metadata["residual_enabled"] is True
-    assert metadata["state_coordinates"] == "takeoff_hold_hover_local"
+    assert metadata["state_coordinates"] == "takeoff_hold_hover_local_rotated"
     assert metadata["state_trim_mode"] == "per_run_takeoff_hold_final"
     assert np.asarray(metadata["state_trim"], dtype=float).shape == (18, 1)
 

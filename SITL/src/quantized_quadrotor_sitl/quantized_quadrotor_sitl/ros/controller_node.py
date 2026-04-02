@@ -28,6 +28,7 @@ from ..telemetry.adapter import physical_control_to_px4_wrench
 from ..utils.control_bounds import RuntimeControlCoordinates, runtime_edmd_control_coordinates
 from ..utils.io import create_sitl_results_directory, write_json
 from ..utils.state import state18_history_to_hover_local_residual, state18_to_hover_local_residual, takeoff_hold_trim_state18
+from ..utils.state import hover_local_translation_rotated
 from .offboard import offboard_control_mode_msg
 
 
@@ -50,6 +51,7 @@ class ControllerNode(Node):
         self.metadata: dict[str, object] = {}
         self.control_coordinates: RuntimeControlCoordinates | None = None
         self.residual_enabled = False
+        self.residual_rotate_translation = False
         self.runtime_state_trim: np.ndarray | None = None
         if self.config.controller_mode == "edmd_mpc":
             self.model, self.metadata = load_edmd_artifact(self._resolve_path(self.config.model_artifact))
@@ -59,6 +61,7 @@ class ControllerNode(Node):
                 learned_bound_margin_fraction=self.config.learned_bound_margin_fraction,
             )
             self.residual_enabled = bool(self.metadata.get("residual_enabled", False))
+            self.residual_rotate_translation = hover_local_translation_rotated(self.metadata.get("state_coordinates"))
             self.get_logger().info(
                 f"Using controller mode '{self.config.controller_mode}' with artifact {self.config.model_artifact}"
             )
@@ -90,6 +93,10 @@ class ControllerNode(Node):
                 self.get_logger().info(
                     "Using takeoff-hold hover-local residual state coordinates for runtime EDMD prediction."
                 )
+                if self.residual_rotate_translation:
+                    self.get_logger().info(
+                        "Residual translation states are rotated into the trim frame for this artifact."
+                    )
             elif self.control_coordinates.physical_lower_bounds[0] > self.config.vehicle_scaling.control_lower_bounds()[0]:
                 self.get_logger().info(
                     f"Using learned collective floor {self.control_coordinates.physical_lower_bounds[0]:.2f} N from artifact metadata."
@@ -220,7 +227,11 @@ class ControllerNode(Node):
             assert self.model is not None
             if self.residual_enabled:
                 self.runtime_state_trim = takeoff_hold_trim_state18(state0)
-                reference_model_state = state18_history_to_hover_local_residual(self.reference_physical, self.runtime_state_trim)
+                reference_model_state = state18_history_to_hover_local_residual(
+                    self.reference_physical,
+                    self.runtime_state_trim,
+                    rotate_translation=self.residual_rotate_translation,
+                )
             else:
                 self.runtime_state_trim = None
                 reference_model_state = self.reference_physical
@@ -442,7 +453,11 @@ class ControllerNode(Node):
             assert self.control_coordinates is not None
             if self.residual_enabled:
                 assert self.runtime_state_trim is not None
-                model_state = state18_to_hover_local_residual(state_used, self.runtime_state_trim)
+                model_state = state18_to_hover_local_residual(
+                    state_used,
+                    self.runtime_state_trim,
+                    rotate_translation=self.residual_rotate_translation,
+                )
                 if self.config.quantization_mode in {"state", "both"} and self.metadata:
                     model_state = self._quantize_vector(model_state, "x_train_min", "x_train_max")
             else:
