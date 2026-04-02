@@ -4,7 +4,7 @@ arm_retry_cycles: 500
 force_arm_in_sitl: true
 force_arm_magic: 21196.0
 controller_mode: edmd_mpc
-model_artifact: results/offline/sitl_baseline_v1/latest/edmd_unquantized.npz
+model_artifact: results/offline/sitl_baseline_v1/20260401T234823Z_sitl_id_v7_hovercentered_affine/edmd_unquantized.npz
 quantization_mode: none
 quantized_word_length: 12
 reference_mode: takeoff_hold

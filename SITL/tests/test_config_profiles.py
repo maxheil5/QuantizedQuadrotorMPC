@@ -3,6 +3,9 @@ from pathlib import Path
 from quantized_quadrotor_sitl.core.config import hover_local_v1_profile, load_runtime_config, matlab_v2_profile, paper_v2_profile
 
 
+RESIDUAL_ARTIFACT_PATH = "results/offline/sitl_baseline_v1/20260401T234823Z_sitl_id_v7_hovercentered_affine/edmd_unquantized.npz"
+
+
 def test_matlab_profile_matches_v2_defaults():
     config = matlab_v2_profile()
     assert config.word_lengths == [4, 6, 8, 10, 12, 14]
@@ -68,7 +71,7 @@ def test_runtime_config_includes_estimator_topic_defaults():
 def test_sitl_retrained_edmd_runtime_config_preserves_baseline_scaling():
     config = load_runtime_config(Path("SITL/configs/sitl_runtime_sitl_retrain_edmd.yaml"))
     assert config.controller_mode == "edmd_mpc"
-    assert config.model_artifact == "results/offline/sitl_baseline_v1/latest/edmd_unquantized.npz"
+    assert config.model_artifact == RESIDUAL_ARTIFACT_PATH
     assert config.reference_mode == "takeoff_hold"
     assert config.vehicle_scaling.max_collective_thrust_newton == 62.0
     assert config.vehicle_scaling.max_body_torque_x_nm == 1.0
@@ -82,7 +85,7 @@ def test_sitl_retrained_edmd_runtime_config_preserves_baseline_scaling():
 def test_sitl_retrained_edmd_light_runtime_config_reduces_solver_load():
     config = load_runtime_config(Path("SITL/configs/sitl_runtime_sitl_retrain_edmd_light.yaml"))
     assert config.controller_mode == "edmd_mpc"
-    assert config.model_artifact == "results/offline/sitl_baseline_v1/latest/edmd_unquantized.npz"
+    assert config.model_artifact == RESIDUAL_ARTIFACT_PATH
     assert config.reference_mode == "takeoff_hold"
     assert config.control_rate_hz == 50.0
     assert config.vehicle_scaling.max_collective_thrust_newton == 62.0
@@ -92,6 +95,19 @@ def test_sitl_retrained_edmd_light_runtime_config_reduces_solver_load():
     assert config.mpc.pred_horizon == 8
     assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
     assert config.mpc.control_delta_weights_diag == [1.0, 6.0, 6.0, 8.0]
+
+
+def test_sitl_retrained_edmd_light_tuned_runtime_config_pins_artifact_and_tunes_lateral_weights():
+    config = load_runtime_config(Path("SITL/configs/sitl_runtime_sitl_retrain_edmd_light_tuned.yaml"))
+    assert config.controller_mode == "edmd_mpc"
+    assert config.model_artifact == RESIDUAL_ARTIFACT_PATH
+    assert config.reference_mode == "takeoff_hold"
+    assert config.control_rate_hz == 50.0
+    assert config.mpc.pred_horizon == 8
+    assert config.mpc.position_error_weights_diag == [600.0, 600.0, 5000.0]
+    assert config.mpc.velocity_error_weights_diag == [120.0, 120.0, 200.0]
+    assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
+    assert config.mpc.control_delta_weights_diag == [2.0, 10.0, 10.0, 12.0]
 
 
 def test_sitl_identification_runtime_config_preserves_known_good_baseline():
