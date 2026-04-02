@@ -25,6 +25,7 @@ from ..mpc.simulate import solve_qp
 from ..quantization.dither import dither_signal
 from ..quantization.partition import partition_range
 from ..telemetry.adapter import physical_control_to_px4_wrench
+from ..utils.control_anchor import apply_moment_authority_anchor
 from ..utils.control_bounds import RuntimeControlCoordinates, runtime_edmd_control_coordinates
 from ..utils.io import create_sitl_results_directory, write_json
 from ..utils.state import state18_history_to_hover_local_residual, state18_to_hover_local_residual, takeoff_hold_trim_state18
@@ -100,6 +101,12 @@ class ControllerNode(Node):
             elif self.control_coordinates.physical_lower_bounds[0] > self.config.vehicle_scaling.control_lower_bounds()[0]:
                 self.get_logger().info(
                     f"Using learned collective floor {self.control_coordinates.physical_lower_bounds[0]:.2f} N from artifact metadata."
+                )
+            if self.config.moment_authority_anchor.enabled:
+                self.get_logger().info(
+                    "Moment authority anchor enabled with "
+                    f"minimum_baseline_fraction={self.config.moment_authority_anchor.minimum_baseline_fraction:.2f} "
+                    f"and active_thresholds_nm={self.config.moment_authority_anchor.active_thresholds_nm}."
                 )
         elif self.config.controller_mode == "baseline_geometric":
             self.get_logger().info(
@@ -255,6 +262,7 @@ class ControllerNode(Node):
             "quantization_mode": self.config.quantization_mode,
             "learned_bound_margin_fraction": float(self.config.learned_bound_margin_fraction),
             "baseline": asdict(self.config.baseline),
+            "moment_authority_anchor": asdict(self.config.moment_authority_anchor),
             "vehicle_scaling": asdict(self.config.vehicle_scaling),
         }
         if self.control_coordinates is not None:
@@ -385,6 +393,17 @@ class ControllerNode(Node):
                 raise
         return collective_command_newton, collective_normalized, float(thrust_body[2])
 
+    def _update_baseline_z_error_integral(self, state_used: np.ndarray, reference_row: np.ndarray, tick_dt_s: float) -> None:
+        z_error = float(reference_row[2] - state_used[2])
+        self.baseline_z_error_integral += z_error * tick_dt_s
+        self.baseline_z_error_integral = float(
+            np.clip(
+                self.baseline_z_error_integral,
+                -self.config.baseline.z_integral_limit,
+                self.config.baseline.z_integral_limit,
+            )
+        )
+
     def _control_tick(self) -> None:
         if self.shutdown_requested:
             if rclpy.ok():
@@ -449,6 +468,9 @@ class ControllerNode(Node):
         state_used = state_raw.copy()
 
         reference_row = self.reference_physical[:, reference_index]
+        baseline_anchor_control_used: np.ndarray | None = None
+        if self.config.controller_mode == "baseline_geometric" or self.config.moment_authority_anchor.enabled:
+            self._update_baseline_z_error_integral(state_used, reference_row, tick_dt_s)
         if self.config.controller_mode == "edmd_mpc":
             assert self.model is not None
             assert self.control_coordinates is not None
@@ -486,21 +508,28 @@ class ControllerNode(Node):
             control_used = control_raw.copy()
             if self.config.quantization_mode in {"control", "both"} and self.metadata:
                 control_used = self._quantize_vector(control_used, "u_train_min", "u_train_max")
+            if self.config.moment_authority_anchor.enabled:
+                _, baseline_anchor_control_used = compute_baseline_control(
+                    state_used,
+                    reference_row,
+                    self.baseline_z_error_integral,
+                    self.config.baseline,
+                    self.config.vehicle_scaling,
+                    self.params,
+                )
+                control_used = apply_moment_authority_anchor(
+                    control_used,
+                    baseline_anchor_control_used,
+                    self.control_coordinates.physical_lower_bounds,
+                    self.control_coordinates.physical_upper_bounds,
+                    self.config.moment_authority_anchor,
+                )
             self.previous_control_internal = np.clip(
                 self.control_coordinates.physical_to_internal(control_used),
                 self.control_coordinates.internal_lower_bounds,
                 self.control_coordinates.internal_upper_bounds,
             )
         else:
-            z_error = float(reference_row[2] - state_used[2])
-            self.baseline_z_error_integral += z_error * tick_dt_s
-            self.baseline_z_error_integral = float(
-                np.clip(
-                    self.baseline_z_error_integral,
-                    -self.config.baseline.z_integral_limit,
-                    self.config.baseline.z_integral_limit,
-                )
-            )
             solver_start = perf_counter()
             control_raw, control_used = compute_baseline_control(
                 state_used,

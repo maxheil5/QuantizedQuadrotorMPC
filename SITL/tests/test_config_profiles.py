@@ -42,6 +42,7 @@ def test_runtime_config_includes_estimator_topic_defaults():
     assert config.force_arm_in_sitl is True
     assert config.force_arm_magic == 21196.0
     assert config.learned_bound_margin_fraction == 0.05
+    assert config.moment_authority_anchor.enabled is False
     assert config.controller_mode == "baseline_geometric"
     assert config.reference_mode == "takeoff_hold"
     assert config.vehicle_scaling.max_collective_thrust_newton == 62.0
@@ -128,6 +129,20 @@ def test_sitl_retrained_edmd_light_minimal_residual_runtime_config_pins_rotated_
     assert config.mpc.control_weights_diag == [1.0e-5, 40.0, 40.0, 60.0]
     assert config.mpc.control_delta_weights_diag == [1.0, 6.0, 6.0, 8.0]
     assert config.mpc.cost_state_mode == "minimal_residual"
+
+
+def test_sitl_retrained_edmd_light_anchor_runtime_config_enables_moment_authority_anchor():
+    config = load_runtime_config(Path("SITL/configs/sitl_runtime_sitl_retrain_edmd_light_anchor.yaml"))
+    assert config.controller_mode == "edmd_mpc"
+    assert config.model_artifact == ROTATED_RESIDUAL_ARTIFACT_PATH
+    assert config.reference_mode == "takeoff_hold"
+    assert config.control_rate_hz == 50.0
+    assert config.learned_bound_margin_fraction == 0.05
+    assert config.mpc.pred_horizon == 8
+    assert config.mpc.cost_state_mode == "decoded24_raw"
+    assert config.moment_authority_anchor.enabled is True
+    assert config.moment_authority_anchor.minimum_baseline_fraction == 0.30
+    assert config.moment_authority_anchor.active_thresholds_nm == [0.05, 0.05, 0.03]
 
 
 def test_sitl_retrained_edmd_light_tuned_runtime_config_pins_artifact_and_tunes_lateral_weights():

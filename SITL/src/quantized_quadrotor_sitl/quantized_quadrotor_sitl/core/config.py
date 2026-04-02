@@ -178,6 +178,16 @@ class BaselineControllerConfig:
 
 
 @dataclass(slots=True)
+class MomentAuthorityAnchorConfig:
+    enabled: bool = False
+    minimum_baseline_fraction: float = 0.30
+    active_thresholds_nm: list[float] = field(default_factory=lambda: [0.05, 0.05, 0.03])
+
+    def active_thresholds(self) -> FloatArray:
+        return np.asarray(self.active_thresholds_nm, dtype=float).reshape(3)
+
+
+@dataclass(slots=True)
 class RuntimeConfig:
     control_rate_hz: float = 100.0
     offboard_warmup_cycles: int = 10
@@ -208,6 +218,7 @@ class RuntimeConfig:
     results_dir: str = "results/sitl/latest"
     vehicle_scaling: VehicleScalingConfig = field(default_factory=VehicleScalingConfig)
     baseline: BaselineControllerConfig = field(default_factory=BaselineControllerConfig)
+    moment_authority_anchor: MomentAuthorityAnchorConfig = field(default_factory=MomentAuthorityAnchorConfig)
     mpc: MPCConfig = field(default_factory=MPCConfig)
 
 
@@ -275,5 +286,12 @@ def load_runtime_config(path: Path) -> RuntimeConfig:
         payload = yaml.safe_load(stream) or {}
     vehicle_scaling = VehicleScalingConfig(**payload.pop("vehicle_scaling", {}))
     baseline = BaselineControllerConfig(**payload.pop("baseline", {}))
+    moment_authority_anchor = MomentAuthorityAnchorConfig(**payload.pop("moment_authority_anchor", {}))
     mpc = MPCConfig(**payload.pop("mpc", {}))
-    return RuntimeConfig(vehicle_scaling=vehicle_scaling, baseline=baseline, mpc=mpc, **payload)
+    return RuntimeConfig(
+        vehicle_scaling=vehicle_scaling,
+        baseline=baseline,
+        moment_authority_anchor=moment_authority_anchor,
+        mpc=mpc,
+        **payload,
+    )
