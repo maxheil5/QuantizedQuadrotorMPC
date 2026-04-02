@@ -1,0 +1,50 @@
+{
+  "artifact_eval_rmse": {
+    "dx": 0.027651257238521604,
+    "theta": 0.029165678829816744,
+    "wb": 0.07194853686012971,
+    "x": 0.004580557483987185
+  },
+  "artifact_path": "results/offline/sitl_baseline_v1/20260401T234823Z_sitl_id_v7_hovercentered_affine/edmd_unquantized.npz",
+  "divergence_time_s": 5.340124707,
+  "dominant_error_group": "dx",
+  "early_window_rmse": {
+    "dx": 0.24745383527772385,
+    "theta": 0.12132906591631092,
+    "wb": 0.3393976569299978,
+    "x": 0.002338381584583552
+  },
+  "early_window_rmse_ratio": {
+    "dx": 8.94909888339508,
+    "theta": 4.159994582134445,
+    "wb": 4.717228059686576,
+    "x": 0.5105015257985777
+  },
+  "early_window_s": 2.0,
+  "log_path": "results/sitl/4-1-26_2010/runtime_log.csv",
+  "post_4s_internal_bound_fraction": {
+    "u0": 0.9407665505226481,
+    "u1": 0.6515679442508711,
+    "u2": 0.7317073170731707,
+    "u3": 0.6341463414634146
+  },
+  "pre_divergence_internal_bound_fraction": {
+    "u0": 0.4980694980694981,
+    "u1": 0.0,
+    "u2": 0.0,
+    "u3": 0.0
+  },
+  "replay_horizon_steps": 10,
+  "residual_enabled": true,
+  "run_name": "4-1-26_2010",
+  "selected_branch": "Branch A",
+  "thresholds": {
+    "bound_activity_margin_fraction": 0.05,
+    "branch_a_state_ratio": 4.0,
+    "branch_a_theta_ratio": 3.0,
+    "branch_a_wb_ratio": 3.0,
+    "branch_b_bound_fraction": 0.1,
+    "branch_b_divergence_time_s": 4.0,
+    "post_4s_internal_bound_fraction_max": 0.15
+  }
+}
