@@ -40,6 +40,7 @@ def test_runtime_config_includes_estimator_topic_defaults():
     assert config.control_rate_hz == 100.0
     assert config.force_arm_in_sitl is True
     assert config.force_arm_magic == 21196.0
+    assert config.learned_bound_margin_fraction == 0.05
     assert config.controller_mode == "baseline_geometric"
     assert config.reference_mode == "takeoff_hold"
     assert config.vehicle_scaling.max_collective_thrust_newton == 62.0
@@ -121,6 +122,20 @@ def test_sitl_retrained_edmd_light_conservative_runtime_config_prioritizes_bound
     assert config.mpc.velocity_error_weights_diag == [60.0, 60.0, 200.0]
     assert config.mpc.control_weights_diag == [1.0e-5, 60.0, 60.0, 90.0]
     assert config.mpc.control_delta_weights_diag == [4.0, 16.0, 16.0, 20.0]
+
+
+def test_sitl_retrained_edmd_light_margin10_runtime_config_uses_bound_margin_with_small_regularization_bump():
+    config = load_runtime_config(Path("SITL/configs/sitl_runtime_sitl_retrain_edmd_light_margin10.yaml"))
+    assert config.controller_mode == "edmd_mpc"
+    assert config.model_artifact == RESIDUAL_ARTIFACT_PATH
+    assert config.reference_mode == "takeoff_hold"
+    assert config.control_rate_hz == 50.0
+    assert config.learned_bound_margin_fraction == 0.10
+    assert config.mpc.pred_horizon == 8
+    assert config.mpc.position_error_weights_diag == [250.0, 250.0, 5000.0]
+    assert config.mpc.velocity_error_weights_diag == [40.0, 40.0, 200.0]
+    assert config.mpc.control_weights_diag == [1.0e-5, 50.0, 50.0, 75.0]
+    assert config.mpc.control_delta_weights_diag == [2.0, 10.0, 10.0, 12.0]
 
 
 def test_sitl_identification_runtime_config_preserves_known_good_baseline():

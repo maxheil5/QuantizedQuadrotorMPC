@@ -78,6 +78,15 @@ def _vehicle_scaling_from_run(run: SITLRunDataset) -> VehicleScalingConfig:
     return VehicleScalingConfig()
 
 
+def _learned_bound_margin_fraction_from_run(run: SITLRunDataset) -> float:
+    control_coordinates = run.run_metadata.get("control_coordinates", {})
+    if isinstance(control_coordinates, dict) and "learned_bound_margin_fraction" in control_coordinates:
+        return max(0.0, float(control_coordinates["learned_bound_margin_fraction"]))
+    if "learned_bound_margin_fraction" in run.run_metadata:
+        return max(0.0, float(run.run_metadata["learned_bound_margin_fraction"]))
+    return 0.05
+
+
 def _control_internal_history(run: SITLRunDataset, coordinates) -> np.ndarray:
     if run.control_internal_history is not None:
         return np.asarray(run.control_internal_history, dtype=float)
@@ -183,7 +192,11 @@ def analyze_runtime_drift(
             runtime_trim = takeoff_hold_trim_state18(run.state_history[:, 0])
         analysis_run = transform_sitl_run_dataset_to_hover_local_residual(run, runtime_trim)
     scaling = _vehicle_scaling_from_run(run)
-    coordinates = runtime_edmd_control_coordinates(scaling, metadata)
+    coordinates = runtime_edmd_control_coordinates(
+        scaling,
+        metadata,
+        learned_bound_margin_fraction=_learned_bound_margin_fraction_from_run(run),
+    )
     control_internal_history = _control_internal_history(run, coordinates)
     artifact_eval = _artifact_eval_rmse(artifact_path)
 

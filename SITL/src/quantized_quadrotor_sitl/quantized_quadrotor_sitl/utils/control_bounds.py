@@ -67,6 +67,7 @@ def runtime_edmd_control_bounds(
 def runtime_edmd_control_coordinates(
     scaling: VehicleScalingConfig,
     metadata: dict[str, object] | None,
+    learned_bound_margin_fraction: float = 0.05,
 ) -> RuntimeControlCoordinates:
     vehicle_lower_bounds = scaling.control_lower_bounds()
     vehicle_upper_bounds = scaling.control_upper_bounds()
@@ -95,7 +96,8 @@ def runtime_edmd_control_coordinates(
     physical_upper_bounds = np.minimum(vehicle_upper_bounds, u_train_max)
     if _residual_enabled(metadata):
         span = np.maximum(physical_upper_bounds - physical_lower_bounds, 0.0)
-        margin = 0.05 * span
+        margin_fraction = max(0.0, float(learned_bound_margin_fraction))
+        margin = margin_fraction * span
         candidate_lower_bounds = physical_lower_bounds + margin
         candidate_upper_bounds = physical_upper_bounds - margin
         valid_mask = candidate_lower_bounds <= candidate_upper_bounds

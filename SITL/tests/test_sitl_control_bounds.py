@@ -161,6 +161,23 @@ def test_runtime_edmd_control_coordinates_apply_inward_margin_for_residual_artif
     npt.assert_allclose(coordinates.physical_upper_bounds, np.array([59.1, 0.175, 0.4375, 0.1535]))
 
 
+def test_runtime_edmd_control_coordinates_support_custom_inward_margin_fraction():
+    scaling = VehicleScalingConfig(max_collective_thrust_newton=62.0, max_body_torque_x_nm=1.0, max_body_torque_y_nm=1.0, max_body_torque_z_nm=0.6)
+    metadata = {
+        "u_train_min": np.array([[42.0], [-0.30], [-0.37], [-0.35]], dtype=float),
+        "u_train_max": np.array([[60.0], [0.20], [0.48], [0.18]], dtype=float),
+        "u_train_mean": np.array([[50.0], [0.02], [0.01], [0.00]], dtype=float),
+        "u_train_std": np.array([[4.0], [0.10], [0.20], [0.05]], dtype=float),
+        "u_trim": np.array([[50.0], [0.02], [0.01], [0.00]], dtype=float),
+        "residual_enabled": True,
+    }
+
+    coordinates = runtime_edmd_control_coordinates(scaling, metadata, learned_bound_margin_fraction=0.10)
+
+    npt.assert_allclose(coordinates.physical_lower_bounds, np.array([43.8, -0.25, -0.285, -0.297]))
+    npt.assert_allclose(coordinates.physical_upper_bounds, np.array([58.2, 0.15, 0.395, 0.127]))
+
+
 def test_runtime_edmd_control_coordinates_fall_back_when_margin_would_invert_interval():
     scaling = VehicleScalingConfig(max_collective_thrust_newton=62.0, max_body_torque_x_nm=1.0, max_body_torque_y_nm=1.0, max_body_torque_z_nm=0.6)
     metadata = {

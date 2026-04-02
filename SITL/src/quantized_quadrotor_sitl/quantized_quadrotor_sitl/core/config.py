@@ -202,6 +202,7 @@ class RuntimeConfig:
     vehicle_command_topic: str = "/fmu/in/vehicle_command"
     vehicle_thrust_setpoint_topic: str = "/fmu/in/vehicle_thrust_setpoint"
     vehicle_torque_setpoint_topic: str = "/fmu/in/vehicle_torque_setpoint"
+    learned_bound_margin_fraction: float = 0.05
     state_history_limit: int = 10000
     results_dir: str = "results/sitl/latest"
     vehicle_scaling: VehicleScalingConfig = field(default_factory=VehicleScalingConfig)

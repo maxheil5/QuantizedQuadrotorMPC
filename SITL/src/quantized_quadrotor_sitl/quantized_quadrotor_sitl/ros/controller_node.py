@@ -53,7 +53,11 @@ class ControllerNode(Node):
         self.runtime_state_trim: np.ndarray | None = None
         if self.config.controller_mode == "edmd_mpc":
             self.model, self.metadata = load_edmd_artifact(self._resolve_path(self.config.model_artifact))
-            self.control_coordinates = runtime_edmd_control_coordinates(self.config.vehicle_scaling, self.metadata)
+            self.control_coordinates = runtime_edmd_control_coordinates(
+                self.config.vehicle_scaling,
+                self.metadata,
+                learned_bound_margin_fraction=self.config.learned_bound_margin_fraction,
+            )
             self.residual_enabled = bool(self.metadata.get("residual_enabled", False))
             self.get_logger().info(
                 f"Using controller mode '{self.config.controller_mode}' with artifact {self.config.model_artifact}"
@@ -78,6 +82,10 @@ class ControllerNode(Node):
                     f"{np.array2string(self.control_coordinates.internal_lower_bounds, precision=3)} to "
                     f"{np.array2string(self.control_coordinates.internal_upper_bounds, precision=3)}."
                 )
+                if self.residual_enabled:
+                    self.get_logger().info(
+                        f"Applying a {100.0 * self.config.learned_bound_margin_fraction:.1f}% inward margin to learned residual control bounds."
+                    )
             if self.residual_enabled:
                 self.get_logger().info(
                     "Using takeoff-hold hover-local residual state coordinates for runtime EDMD prediction."
@@ -233,12 +241,14 @@ class ControllerNode(Node):
             "model_affine_enabled": bool(self.model.affine_enabled) if self.model is not None else False,
             "model_residual_enabled": bool(self.residual_enabled),
             "quantization_mode": self.config.quantization_mode,
+            "learned_bound_margin_fraction": float(self.config.learned_bound_margin_fraction),
             "baseline": asdict(self.config.baseline),
             "vehicle_scaling": asdict(self.config.vehicle_scaling),
         }
         if self.control_coordinates is not None:
             payload["control_coordinates"] = {
                 "normalized": bool(self.control_coordinates.normalized),
+                "learned_bound_margin_fraction": float(self.config.learned_bound_margin_fraction),
                 "trim": self.control_coordinates.trim.tolist(),
                 "scale": self.control_coordinates.scale.tolist(),
                 "physical_lower_bounds": self.control_coordinates.physical_lower_bounds.tolist(),
