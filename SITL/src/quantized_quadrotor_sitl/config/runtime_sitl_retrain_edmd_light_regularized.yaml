@@ -1,0 +1,50 @@
+control_rate_hz: 50.0
+offboard_warmup_cycles: 10
+arm_retry_cycles: 500
+force_arm_in_sitl: true
+force_arm_magic: 21196.0
+controller_mode: edmd_mpc
+model_artifact: results/offline/sitl_baseline_v1/20260401T234823Z_sitl_id_v7_hovercentered_affine/edmd_unquantized.npz
+quantization_mode: none
+quantized_word_length: 12
+reference_mode: takeoff_hold
+reference_seed: 2141444
+reference_duration_s: 10.0
+state_topic: /quantized_mpc/state18
+state_log_topic: /quantized_mpc/state18_quantized
+control_debug_topic: /quantized_mpc/control_debug
+vehicle_odometry_topic: /fmu/out/vehicle_odometry
+vehicle_local_position_topic: /fmu/out/vehicle_local_position
+vehicle_attitude_topic: /fmu/out/vehicle_attitude
+vehicle_angular_velocity_topic: /fmu/out/vehicle_angular_velocity
+vehicle_status_topic: /fmu/out/vehicle_status_v1
+offboard_control_mode_topic: /fmu/in/offboard_control_mode
+vehicle_command_topic: /fmu/in/vehicle_command
+vehicle_thrust_setpoint_topic: /fmu/in/vehicle_thrust_setpoint
+vehicle_torque_setpoint_topic: /fmu/in/vehicle_torque_setpoint
+learned_bound_margin_fraction: 0.05
+results_dir: results/sitl/latest
+vehicle_scaling:
+  max_collective_thrust_newton: 62.0
+  max_body_torque_x_nm: 1.0
+  max_body_torque_y_nm: 1.0
+  max_body_torque_z_nm: 0.6
+baseline:
+  position_gains_diag: [0.5, 0.5, 5.5]
+  velocity_gains_diag: [0.8, 0.8, 3.0]
+  attitude_gains_diag: [2.5, 2.5, 0.8]
+  angular_rate_gains_diag: [0.25, 0.25, 0.15]
+  z_integral_gain: 1.2
+  z_integral_limit: 1.5
+  max_tilt_deg: 12.0
+mpc:
+  pred_horizon: 8
+  sim_timestep: 0.001
+  sim_duration: 1.2
+  use_casadi: false
+  position_error_weights_diag: [250.0, 250.0, 5000.0]
+  velocity_error_weights_diag: [40.0, 40.0, 200.0]
+  attitude_error_weight: 100.0
+  angular_velocity_error_weight: 150.0
+  control_weights_diag: [1.0e-5, 50.0, 50.0, 75.0]
+  control_delta_weights_diag: [2.0, 10.0, 10.0, 12.0]
