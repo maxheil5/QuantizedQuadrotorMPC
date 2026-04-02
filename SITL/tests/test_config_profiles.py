@@ -110,6 +110,19 @@ def test_sitl_retrained_edmd_light_tuned_runtime_config_pins_artifact_and_tunes_
     assert config.mpc.control_delta_weights_diag == [2.0, 10.0, 10.0, 12.0]
 
 
+def test_sitl_retrained_edmd_light_conservative_runtime_config_prioritizes_bound_suppression():
+    config = load_runtime_config(Path("SITL/configs/sitl_runtime_sitl_retrain_edmd_light_conservative.yaml"))
+    assert config.controller_mode == "edmd_mpc"
+    assert config.model_artifact == RESIDUAL_ARTIFACT_PATH
+    assert config.reference_mode == "takeoff_hold"
+    assert config.control_rate_hz == 50.0
+    assert config.mpc.pred_horizon == 8
+    assert config.mpc.position_error_weights_diag == [350.0, 350.0, 5000.0]
+    assert config.mpc.velocity_error_weights_diag == [60.0, 60.0, 200.0]
+    assert config.mpc.control_weights_diag == [1.0e-5, 60.0, 60.0, 90.0]
+    assert config.mpc.control_delta_weights_diag == [4.0, 16.0, 16.0, 20.0]
+
+
 def test_sitl_identification_runtime_config_preserves_known_good_baseline():
     config = load_runtime_config(Path("SITL/configs/sitl_runtime_identification.yaml"))
     assert config.controller_mode == "baseline_geometric"
