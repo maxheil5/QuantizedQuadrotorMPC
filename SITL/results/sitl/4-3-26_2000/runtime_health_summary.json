@@ -1,0 +1,19 @@
+{
+  "config_path": "/home/soarbuckiadm/Desktop/QuantizedQuadrotorMPC-main/SITL/configs/sitl_runtime_sitl_retrain_edmd_light_anchor.yaml",
+  "control_rate_hz": 50.0,
+  "effective_control_rate_hz": 47.19453986155852,
+  "final_time_s": 9.979968051,
+  "pred_horizon": 8,
+  "reference_duration_s": 10.0,
+  "runtime_failure_reason": "solver_ms_p90",
+  "runtime_validity": "timing_collapse",
+  "sample_count": 472,
+  "solver_ms_max": 59.45465300465003,
+  "solver_ms_mean": 12.242452271354939,
+  "solver_ms_p50": 10.39239950478077,
+  "solver_ms_p90": 19.789302692515776,
+  "tick_dt_ms_max": 74.675665,
+  "tick_dt_ms_mean": 21.144000108050847,
+  "tick_dt_ms_p50": 20.018662,
+  "tick_dt_ms_p90": 24.055260200000006
+}
