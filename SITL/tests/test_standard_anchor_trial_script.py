@@ -14,5 +14,7 @@ def test_standard_anchor_trial_script_uses_standard_anchor_config_and_backfill()
     assert "--run-dir \"${run_dir}\"" in script_text
     assert "--base-dir \"${ROOT_DIR}\"" in script_text
     assert "print_run_output_summary" in script_text
+    assert "Canonical run folder name:" in script_text
+    assert "Use this exact folder name for upload and analysis. Do not rename it." in script_text
     assert "Stored files:" in script_text
     assert "quantized_quadrotor_sitl.experiments.sitl_postrun_analysis" in script_text

@@ -107,6 +107,40 @@ print(run_dir)
 PY
 }
 
+resolve_run_dir_from_metadata() {
+  local metadata_path="$1"
+  python - "${metadata_path}" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+metadata_path = Path(sys.argv[1])
+if not metadata_path.exists():
+    raise SystemExit(1)
+payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+run_dir = payload.get("run_dir")
+if run_dir is None:
+    raise SystemExit(1)
+print(Path(run_dir).resolve(strict=False))
+PY
+}
+
+resolve_canonical_run_dir() {
+  local resolved_results_dir guessed_run_dir metadata_path canonical_run_dir
+  if ! resolved_results_dir="$(resolve_results_dir_from_config)"; then
+    return 1
+  fi
+  if ! guessed_run_dir="$(resolve_active_run_dir "${resolved_results_dir}")"; then
+    return 1
+  fi
+  metadata_path="${guessed_run_dir}/run_metadata.json"
+  if canonical_run_dir="$(resolve_run_dir_from_metadata "${metadata_path}" 2>/dev/null)"; then
+    echo "${canonical_run_dir}"
+    return 0
+  fi
+  echo "${guessed_run_dir}"
+}
+
 resolve_artifact_path_from_metadata() {
   local metadata_path="$1"
   python - "${metadata_path}" "${CALLER_WORKDIR}" <<'PY'
@@ -203,17 +237,12 @@ maybe_generate_postrun_analyses() {
     return 0
   fi
 
-  local resolved_results_dir run_dir metadata_path artifact_path
+  local run_dir metadata_path artifact_path
   local postrun_cmd=()
 
-  if ! resolved_results_dir="$(resolve_results_dir_from_config)"; then
-    echo "WARNING: automatic post-run analysis failed while resolving results_dir." >&2
-    echo "Config path: ${CONFIG_PATH}" >&2
-    return 1
-  fi
-  if ! run_dir="$(resolve_active_run_dir "${resolved_results_dir}")"; then
+  if ! run_dir="$(resolve_canonical_run_dir)"; then
     echo "WARNING: automatic post-run analysis failed while resolving run_dir." >&2
-    echo "Resolved results dir: ${resolved_results_dir}" >&2
+    echo "Config path: ${CONFIG_PATH}" >&2
     return 1
   fi
   metadata_path="${run_dir}/run_metadata.json"
@@ -245,12 +274,8 @@ print_run_output_summary() {
     return 0
   fi
 
-  local resolved_results_dir run_dir
-  if ! resolved_results_dir="$(resolve_results_dir_from_config)"; then
-    echo "SITL cleanup finished, but the final results directory could not be resolved." >&2
-    return 1
-  fi
-  if ! run_dir="$(resolve_active_run_dir "${resolved_results_dir}")"; then
+  local run_dir
+  if ! run_dir="$(resolve_canonical_run_dir)"; then
     echo "SITL cleanup finished, but the final run directory could not be resolved." >&2
     return 1
   fi
@@ -262,6 +287,8 @@ print_run_output_summary() {
   echo "" >&2
   echo "SITL run fully complete." >&2
   echo "Run directory: ${run_dir}" >&2
+  echo "Canonical run folder name: $(basename "${run_dir}")" >&2
+  echo "Use this exact folder name for upload and analysis. Do not rename it." >&2
   echo "Stored files:" >&2
   python - "${run_dir}" <<'PY'
 from pathlib import Path

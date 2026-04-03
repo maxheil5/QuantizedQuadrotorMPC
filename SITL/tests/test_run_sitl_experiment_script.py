@@ -16,6 +16,7 @@ def test_run_sitl_experiment_script_supports_graceful_shutdown_and_summary():
     assert "Received ${signal}; stopping the simulation and finalizing run artifacts. Do not press Ctrl-C again unless you want to abort cleanup." in script_text
     assert "Second ${signal} received; forcing immediate shutdown." in script_text
     assert "print_run_output_summary" in script_text
+    assert "Canonical run folder name:" in script_text
+    assert "Use this exact folder name for upload and analysis. Do not rename it." in script_text
     assert "Stored files:" in script_text
     assert "quantized_quadrotor_sitl.experiments.sitl_postrun_analysis" in script_text
-

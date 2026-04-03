@@ -42,6 +42,11 @@ def _resolve_run_dir_from_config(config_path: Path, base_dir: Path) -> tuple[Pat
     run_dir = results_dir.resolve(strict=False) if results_dir.name == "latest" else results_dir
     metadata_path = run_dir / "run_metadata.json"
     metadata = _load_optional_metadata(metadata_path)
+    metadata_run_dir = metadata.get("run_dir")
+    if isinstance(metadata_run_dir, str) and metadata_run_dir:
+        run_dir = Path(metadata_run_dir).resolve(strict=False)
+        metadata_path = run_dir / "run_metadata.json"
+        metadata = _load_optional_metadata(metadata_path)
     artifact_raw = metadata.get("model_artifact", config.model_artifact)
     artifact_path = _resolve_artifact_path(str(artifact_raw), base_dir=base_dir)
     return run_dir, run_dir / "runtime_log.csv", artifact_path, metadata

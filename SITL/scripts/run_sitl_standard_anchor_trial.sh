@@ -46,6 +46,8 @@ print_run_output_summary() {
   echo "" >&2
   echo "Standard anchor trial fully complete." >&2
   echo "Run directory: ${run_dir}" >&2
+  echo "Canonical run folder name: $(basename "${run_dir}")" >&2
+  echo "Use this exact folder name for upload and analysis. Do not rename it." >&2
   echo "Stored files:" >&2
   python - "${run_dir}" <<'PY'
 from pathlib import Path
@@ -62,6 +64,7 @@ PY
 resolve_run_dir() {
   python - "${CONFIG_PATH}" "${ROOT_DIR}" <<'PY'
 from pathlib import Path
+import json
 import sys
 from quantized_quadrotor_sitl.core.config import load_runtime_config
 
@@ -73,6 +76,12 @@ results_dir = Path(config.results_dir)
 if not results_dir.is_absolute():
     results_dir = root_dir / results_dir
 run_dir = results_dir.resolve(strict=False) if results_dir.name == "latest" else results_dir.resolve(strict=False)
+metadata_path = run_dir / "run_metadata.json"
+if metadata_path.exists():
+    payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata_run_dir = payload.get("run_dir")
+    if metadata_run_dir:
+        run_dir = Path(metadata_run_dir).resolve(strict=False)
 print(run_dir)
 PY
 }

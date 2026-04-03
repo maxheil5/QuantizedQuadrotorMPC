@@ -81,6 +81,25 @@ def _write_run_metadata(path: Path) -> None:
         json.dump(payload, stream)
 
 
+def _write_drift_summary(path: Path, *, divergence_time_s: float, post_four: dict[str, float] | None = None) -> None:
+    payload = {
+        "selected_branch": "Branch A",
+        "dominant_error_group": "x",
+        "divergence_time_s": divergence_time_s,
+        "post_4s_internal_bound_fraction": post_four or {"u0": 0.0, "u1": 0.0, "u2": 0.0, "u3": 0.0},
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _write_control_audit_summary(path: Path, *, u2_first_used_mismatch_time_s: float | None) -> None:
+    payload = {
+        "mapping_status": "model/runtime issue",
+        "dominant_mismatch_axis": "u2",
+        "u2_first_used_mismatch_time_s": u2_first_used_mismatch_time_s,
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_compute_hover_gate_metrics_extracts_repeatable_validation_metrics(tmp_path: Path):
     run_dir = tmp_path / "4-1-26_1530"
     run_dir.mkdir(parents=True)
@@ -94,6 +113,7 @@ def test_compute_hover_gate_metrics_extracts_repeatable_validation_metrics(tmp_p
     assert metrics["solver_mean_ms"] == 9.5
     assert metrics["tick_mean_ms"] == 10.5
     assert metrics["max_lateral_radius"] > 0.0
+    assert metrics["max_lateral_error_radius"] == pytest.approx(0.09)
 
 
 def test_evaluate_hover_gates_reports_standard_profile_pass(tmp_path: Path):
@@ -151,3 +171,48 @@ def test_evaluate_hover_gates_applies_light_residual_drift_checks(tmp_path: Path
     assert evaluation["passed"] is True
     assert evaluation["checks"]["early_window_rmse_ratio_x"] is True
     assert evaluation["checks"]["post_4s_internal_bound_fraction_u0"] is True
+
+
+def test_evaluate_hover_gates_passes_light_anchor_confirmation_profile(tmp_path: Path):
+    run_dir = tmp_path / "4-3-26_1700_01"
+    run_dir.mkdir(parents=True)
+    z_values = [0.0] + [0.74 + 0.001 * min(step, 10) for step in range(1, 101)]
+    x_values = [0.003 * step for step in range(101)]
+    u2_values = [0.02 for _ in range(101)]
+    _write_runtime_log(run_dir / "runtime_log.csv", z_values, x_values, u2_values, 11.5, 10.5)
+    _write_run_metadata(run_dir / "run_metadata.json")
+    _write_drift_summary(run_dir / "drift_summary.json", divergence_time_s=10.0)
+    _write_control_audit_summary(run_dir / "control_audit_summary.json", u2_first_used_mismatch_time_s=8.4)
+
+    evaluation = evaluate_hover_gates(run_dir / "runtime_log.csv", profile="light_anchor_confirmation")
+
+    assert evaluation["passed"] is True
+    assert evaluation["checks"]["max_lateral_error_radius"] is True
+    assert evaluation["checks"]["final_position_error"] is True
+    assert evaluation["checks"]["position_rmse"] is True
+    assert evaluation["checks"]["divergence_reaches_end"] is True
+    assert evaluation["checks"]["post_4s_internal_bound_fraction_u2"] is True
+    assert evaluation["checks"]["u2_first_used_mismatch_time_s"] is True
+    assert evaluation["u2_first_used_mismatch_time_s"] == pytest.approx(8.4)
+
+
+def test_evaluate_hover_gates_blocks_standard_anchor_h8_promotion_when_u2_bounds_are_hot(tmp_path: Path):
+    run_dir = tmp_path / "4-3-26_1800_01"
+    run_dir.mkdir(parents=True)
+    z_values = [0.0] + [0.76 for _ in range(100)]
+    x_values = [0.01 * step for step in range(101)]
+    u2_values = [0.02 for _ in range(101)]
+    _write_runtime_log(run_dir / "runtime_log.csv", z_values, x_values, u2_values, 9.8, 8.0)
+    _write_run_metadata(run_dir / "run_metadata.json")
+    _write_drift_summary(
+        run_dir / "drift_summary.json",
+        divergence_time_s=10.0,
+        post_four={"u0": 0.0, "u1": 0.0, "u2": 0.12, "u3": 0.0},
+    )
+    _write_control_audit_summary(run_dir / "control_audit_summary.json", u2_first_used_mismatch_time_s=8.8)
+
+    evaluation = evaluate_hover_gates(run_dir / "runtime_log.csv", profile="standard_anchor_h8_promotion")
+
+    assert evaluation["passed"] is False
+    assert evaluation["checks"]["post_4s_internal_bound_fraction_u2"] is False
+    assert evaluation["checks"]["divergence_reaches_end"] is True
