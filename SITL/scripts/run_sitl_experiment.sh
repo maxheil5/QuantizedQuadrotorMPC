@@ -31,6 +31,10 @@ VIDEO_RECORDER_OUTPUT_PATH=""
 VIDEO_RECORDER_TEMP_PATH=""
 VIDEO_RECORDER_FINALIZED=0
 VIDEO_RECORDER_CAPTURE_SOURCE=""
+SIMULATION_STACK_STOPPED=0
+PX4_PGID=""
+RUN_LAUNCH_EPOCH="$(date +%s)"
+PREVIOUS_ACTIVE_RUN_DIR=""
 GZ_MODELS_DIR="${ROOT_DIR}/artifacts/generated/gazebo_models"
 GZ_WORLDS_DIR="${ROOT_DIR}/configs/gazebo/worlds"
 PX4_BUNDLED_MODELS_DIR="${PX4_DIR}/Tools/simulation/gz/models"
@@ -87,17 +91,10 @@ AGENT_PID=$!
 
 cleanup() {
   trap - EXIT INT TERM
-  stop_gazebo_video_recording
   kill "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
-  kill "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
-  kill "${PX4_PID:-0}" >/dev/null 2>&1 || true
-  kill "${GCS_HEARTBEAT_PID:-0}" >/dev/null 2>&1 || true
-  kill "${AGENT_PID:-0}" >/dev/null 2>&1 || true
+  stop_simulation_stack
+  stop_gazebo_video_recording
   wait "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
-  wait "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
-  wait "${PX4_PID:-0}" >/dev/null 2>&1 || true
-  wait "${GCS_HEARTBEAT_PID:-0}" >/dev/null 2>&1 || true
-  wait "${AGENT_PID:-0}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
@@ -108,6 +105,11 @@ require_running() {
     echo "${label} failed to start or exited immediately." >&2
     exit 1
   fi
+}
+
+resolve_process_group_id() {
+  local pid="$1"
+  ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ' || true
 }
 
 resolve_results_dir_from_config() {
@@ -162,12 +164,31 @@ PY
 wait_for_active_run_dir() {
   local resolved_results_dir="$1"
   local wait_seconds="$2"
+  local previous_run_dir="${3:-}"
+  local launch_epoch="${4:-0}"
   local deadline=$((SECONDS + wait_seconds))
-  local run_dir=""
+  local run_dir="" metadata_path=""
   while (( SECONDS < deadline )); do
-    if run_dir="$(resolve_active_run_dir "${resolved_results_dir}" 2>/dev/null)" && [[ -f "${run_dir}/run_metadata.json" ]]; then
-      echo "${run_dir}"
-      return 0
+    if run_dir="$(resolve_active_run_dir "${resolved_results_dir}" 2>/dev/null)"; then
+      metadata_path="${run_dir}/run_metadata.json"
+      if [[ -n "${previous_run_dir}" && "${run_dir}" == "${previous_run_dir}" ]]; then
+        sleep 0.5
+        continue
+      fi
+      if [[ -f "${metadata_path}" ]]; then
+        if python - "${metadata_path}" "${launch_epoch}" <<'PY'
+from pathlib import Path
+import sys
+
+metadata_path = Path(sys.argv[1])
+launch_epoch = float(sys.argv[2])
+raise SystemExit(0 if metadata_path.stat().st_mtime >= launch_epoch else 1)
+PY
+        then
+          echo "${run_dir}"
+          return 0
+        fi
+      fi
     fi
     sleep 0.5
   done
@@ -269,7 +290,7 @@ maybe_start_gazebo_video_recording() {
     echo "WARNING: failed to resolve results directory for Gazebo video recording." >&2
     return 0
   fi
-  if ! run_dir="$(wait_for_active_run_dir "${resolved_results_dir}" "${GAZEBO_VIDEO_WAIT_SECONDS}")"; then
+  if ! run_dir="$(wait_for_active_run_dir "${resolved_results_dir}" "${GAZEBO_VIDEO_WAIT_SECONDS}" "${PREVIOUS_ACTIVE_RUN_DIR}" "${RUN_LAUNCH_EPOCH}")"; then
     echo "WARNING: failed to resolve active run directory for Gazebo video recording." >&2
     return 0
   fi
@@ -367,6 +388,41 @@ stop_gazebo_video_recording() {
   fi
   VIDEO_RECORDER_PID=0
   finalize_gazebo_video_recording || true
+}
+
+stop_px4_process_group() {
+  local pgid="$1"
+  local pid="$2"
+  local wait_count=0
+  if [[ -z "${pgid}" ]]; then
+    return 0
+  fi
+  kill -TERM -- "-${pgid}" >/dev/null 2>&1 || true
+  while [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" >/dev/null 2>&1 && (( wait_count < 20 )); do
+    sleep 0.25
+    wait_count=$((wait_count + 1))
+  done
+  if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" >/dev/null 2>&1; then
+    kill -KILL -- "-${pgid}" >/dev/null 2>&1 || true
+  fi
+}
+
+stop_simulation_stack() {
+  if [[ "${SIMULATION_STACK_STOPPED:-0}" == "1" ]]; then
+    return 0
+  fi
+  SIMULATION_STACK_STOPPED=1
+
+  echo "Stopping PX4/Gazebo simulation stack..." >&2
+  kill "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
+  stop_px4_process_group "${PX4_PGID:-}" "${PX4_PID:-0}"
+  kill "${PX4_PID:-0}" >/dev/null 2>&1 || true
+  kill "${GCS_HEARTBEAT_PID:-0}" >/dev/null 2>&1 || true
+  kill "${AGENT_PID:-0}" >/dev/null 2>&1 || true
+  wait "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
+  wait "${PX4_PID:-0}" >/dev/null 2>&1 || true
+  wait "${GCS_HEARTBEAT_PID:-0}" >/dev/null 2>&1 || true
+  wait "${AGENT_PID:-0}" >/dev/null 2>&1 || true
 }
 
 maybe_generate_postrun_analyses() {
@@ -467,14 +523,28 @@ GCS_HEARTBEAT_PID=$!
 sleep 1
 require_running "${GCS_HEARTBEAT_PID}" "GCS heartbeat helper"
 
+if PREVIOUS_RESULTS_DIR="$(resolve_results_dir_from_config 2>/dev/null)"; then
+  PREVIOUS_ACTIVE_RUN_DIR="$(resolve_active_run_dir "${PREVIOUS_RESULTS_DIR}" 2>/dev/null || true)"
+fi
+
 pushd "${PX4_DIR}" >/dev/null
-env \
-  PX4_SYS_AUTOSTART="${PX4_SYS_AUTOSTART:-4001}" \
-  PX4_GZ_WORLD="${WORLD_NAME}" \
-  PX4_SIM_MODEL="${SIM_MODEL_NAME}" \
-  ./build/px4_sitl_default/bin/px4 &
+if command -v setsid >/dev/null 2>&1; then
+  setsid env \
+    PX4_SYS_AUTOSTART="${PX4_SYS_AUTOSTART:-4001}" \
+    PX4_GZ_WORLD="${WORLD_NAME}" \
+    PX4_SIM_MODEL="${SIM_MODEL_NAME}" \
+    ./build/px4_sitl_default/bin/px4 &
+else
+  env \
+    PX4_SYS_AUTOSTART="${PX4_SYS_AUTOSTART:-4001}" \
+    PX4_GZ_WORLD="${WORLD_NAME}" \
+    PX4_SIM_MODEL="${SIM_MODEL_NAME}" \
+    ./build/px4_sitl_default/bin/px4 &
+fi
 PX4_PID=$!
 popd >/dev/null
+sleep 1
+PX4_PGID="$(resolve_process_group_id "${PX4_PID}")"
 
 python -m quantized_quadrotor_sitl.ros.telemetry_adapter_node --ros-args -p config_path:="${CONFIG_PATH}" &
 TELEMETRY_PID=$!
@@ -489,6 +559,7 @@ if ! wait "${CONTROLLER_PID}"; then
   CONTROLLER_STATUS=$?
 fi
 
+stop_simulation_stack
 stop_gazebo_video_recording
 maybe_generate_postrun_analyses || true
 print_run_output_summary || true
