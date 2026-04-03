@@ -275,6 +275,45 @@ def test_control_audit_classifies_raw_sign_bug_as_learned_controller_issue(tmp_p
     assert select_anchor_mapping_status(summary) == "learned-controller/runtime issue"
 
 
+def test_control_audit_reports_u2_late_window_summary_fields(tmp_path: Path):
+    run_dir = tmp_path / "4-1-26_u2_summary"
+    run_dir.mkdir()
+    log_path = run_dir / "runtime_log.csv"
+    artifact_path = tmp_path / "results" / "offline" / "test" / "edmd_unquantized.npz"
+    artifact_path.parent.mkdir(parents=True)
+    _write_artifact(artifact_path)
+    _write_run_metadata(run_dir / "run_metadata.json")
+    states = [_identity_state18(0.0, 0.0, 0.75)] * 5
+    references = [_identity_state18(1.0, 1.0, 0.75)] * 5
+    raw_controls = [[43.0, -0.20, -0.20, 0.05]] * 5
+    used_controls = [[43.0, -0.20, -0.15, 0.05]] * 5
+    _write_runtime_log(
+        log_path,
+        states=states,
+        references=references,
+        controls=used_controls,
+        raw_controls=raw_controls,
+        used_controls=used_controls,
+    )
+
+    summary = analyze_runtime_control_audit(log_path, artifact_path)
+
+    assert summary["u2_first_raw_mismatch_time_s"] == pytest.approx(0.0)
+    assert summary["u2_first_used_mismatch_time_s"] == pytest.approx(0.0)
+    raw_snapshot = summary["u2_first_raw_mismatch_snapshot"]
+    used_snapshot = summary["u2_first_used_mismatch_snapshot"]
+    assert isinstance(raw_snapshot, dict)
+    assert isinstance(used_snapshot, dict)
+    assert raw_snapshot["baseline_u2"] > 0.0
+    assert raw_snapshot["raw_u2"] < 0.0
+    assert used_snapshot["used_u2"] < 0.0
+    assert raw_snapshot["lateral_position_residual_norm"] > 0.0
+    assert used_snapshot["lateral_velocity_residual_norm"] >= 0.0
+    assert summary["u2_late_window_mean_raw_sign_match"] == pytest.approx(0.0)
+    assert summary["u2_late_window_mean_used_sign_match"] == pytest.approx(0.0)
+    assert summary["u2_late_window_mean_lateral_position_residual_norm"] > 0.0
+
+
 def test_vehicle_odometry_to_state18_preserves_expected_enu_flu_conventions():
     state = vehicle_odometry_to_state18(
         position_ned=np.array([1.0, 2.0, -3.0], dtype=float),

@@ -264,6 +264,9 @@ class ControllerNode(Node):
             "baseline": asdict(self.config.baseline),
             "moment_authority_anchor": asdict(self.config.moment_authority_anchor),
             "vehicle_scaling": asdict(self.config.vehicle_scaling),
+            "run_dir": str(self.log_path.parent),
+            "log_path": str(self.log_path),
+            "metadata_path": str(self.metadata_path),
         }
         if self.control_coordinates is not None:
             payload["control_coordinates"] = {

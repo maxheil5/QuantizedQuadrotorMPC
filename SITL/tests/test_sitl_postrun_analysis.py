@@ -166,8 +166,67 @@ def test_run_postrun_edmd_analyses_writes_drift_and_control_sidecars(tmp_path: P
     summary = run_postrun_edmd_analyses(config_path=config_path, base_dir=base_dir)
 
     assert summary["skipped"] is False
+    assert Path(summary["run_dir"]) == run_dir
     assert summary["cost_state_mode"] == "minimal_residual"
     assert (run_dir / "drift_summary.json").exists()
     assert (run_dir / "drift_trace.csv").exists()
     assert (run_dir / "control_audit_summary.json").exists()
     assert (run_dir / "control_audit_trace.csv").exists()
+
+
+def test_run_postrun_edmd_analyses_writes_sidecars_from_run_dir(tmp_path: Path):
+    run_dir = tmp_path / "results" / "sitl" / "4-1-26_direct"
+    run_dir.mkdir(parents=True)
+    artifact_path = tmp_path / "results" / "offline" / "test" / "edmd_unquantized.npz"
+    artifact_path.parent.mkdir(parents=True)
+    _write_artifact(artifact_path)
+    _write_runtime_log(run_dir / "runtime_log.csv")
+    _write_run_metadata(
+        run_dir / "run_metadata.json",
+        str(artifact_path),
+        cost_state_mode="decoded24_raw",
+    )
+
+    summary = run_postrun_edmd_analyses(
+        run_dir=run_dir,
+        artifact_path=artifact_path,
+    )
+
+    assert summary["skipped"] is False
+    assert Path(summary["run_dir"]) == run_dir
+    assert (run_dir / "drift_summary.json").exists()
+    assert (run_dir / "control_audit_summary.json").exists()
+
+
+def test_run_postrun_edmd_analyses_writes_sidecars_from_log_path(tmp_path: Path):
+    run_dir = tmp_path / "results" / "sitl" / "4-1-26_log_path"
+    run_dir.mkdir(parents=True)
+    artifact_path = tmp_path / "results" / "offline" / "test" / "edmd_unquantized.npz"
+    artifact_path.parent.mkdir(parents=True)
+    _write_artifact(artifact_path)
+    log_path = run_dir / "runtime_log.csv"
+    _write_runtime_log(log_path)
+    _write_run_metadata(
+        run_dir / "run_metadata.json",
+        str(artifact_path),
+        cost_state_mode="decoded24_raw",
+    )
+
+    summary = run_postrun_edmd_analyses(
+        log_path=log_path,
+        artifact_path=artifact_path,
+    )
+
+    assert summary["skipped"] is False
+    assert Path(summary["run_dir"]) == run_dir
+    assert (run_dir / "drift_summary.json").exists()
+    assert (run_dir / "control_audit_summary.json").exists()
+
+
+def test_run_sitl_experiment_script_invokes_postrun_with_run_dir():
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "run_sitl_experiment.sh"
+    script_text = script_path.read_text(encoding="utf-8")
+
+    assert "--run-dir \"${run_dir}\"" in script_text
+    assert "--artifact-path \"${artifact_path}\"" in script_text
+    assert "--metadata-path \"${metadata_path}\"" in script_text

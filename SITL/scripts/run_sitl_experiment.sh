@@ -98,9 +98,85 @@ maybe_generate_postrun_analyses() {
     return 0
   fi
 
-  python -m quantized_quadrotor_sitl.experiments.sitl_postrun_analysis \
-    --config-path "${CONFIG_PATH}" \
-    --base-dir "${CALLER_WORKDIR}"
+  local resolved_results_dir
+  local run_dir
+  local metadata_path
+  local artifact_path
+  local postrun_cmd=()
+
+  if ! resolved_results_dir="$(
+    python - "${CONFIG_PATH}" "${CALLER_WORKDIR}" <<'PY'
+from pathlib import Path
+import sys
+from quantized_quadrotor_sitl.core.config import load_runtime_config
+
+config_path = Path(sys.argv[1])
+base_dir = Path(sys.argv[2])
+resolved_config = config_path if config_path.is_absolute() else (base_dir / config_path)
+config = load_runtime_config(resolved_config)
+results_dir = Path(config.results_dir)
+if not results_dir.is_absolute():
+    results_dir = base_dir / results_dir
+print(results_dir)
+PY
+  )"; then
+    echo "WARNING: automatic post-run analysis failed while resolving results_dir." >&2
+    echo "Config path: ${CONFIG_PATH}" >&2
+    return 1
+  fi
+  if ! run_dir="$(
+    python - "${resolved_results_dir}" <<'PY'
+from pathlib import Path
+import sys
+
+results_dir = Path(sys.argv[1])
+run_dir = results_dir.resolve(strict=False) if results_dir.name == "latest" else results_dir.resolve(strict=False)
+print(run_dir)
+PY
+  )"; then
+    echo "WARNING: automatic post-run analysis failed while resolving run_dir." >&2
+    echo "Resolved results dir: ${resolved_results_dir}" >&2
+    return 1
+  fi
+  metadata_path="${run_dir}/run_metadata.json"
+  if ! artifact_path="$(
+    python - "${metadata_path}" "${CALLER_WORKDIR}" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+metadata_path = Path(sys.argv[1])
+base_dir = Path(sys.argv[2])
+payload = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+raw_path = payload.get("model_artifact")
+if raw_path is None:
+    raise SystemExit("run metadata does not include model_artifact")
+artifact_path = Path(raw_path)
+if not artifact_path.is_absolute():
+    artifact_path = base_dir / artifact_path
+print(artifact_path)
+PY
+  )"; then
+    echo "WARNING: automatic post-run analysis failed while resolving artifact_path." >&2
+    echo "Resolved run dir: ${run_dir}" >&2
+    echo "Metadata path: ${metadata_path}" >&2
+    return 1
+  fi
+
+  postrun_cmd=(
+    python -m quantized_quadrotor_sitl.experiments.sitl_postrun_analysis
+    --run-dir "${run_dir}"
+    --artifact-path "${artifact_path}"
+    --metadata-path "${metadata_path}"
+  )
+
+  if ! "${postrun_cmd[@]}"; then
+    echo "WARNING: automatic post-run analysis failed; runtime_log.csv is still available." >&2
+    echo "Resolved run dir: ${run_dir}" >&2
+    echo "Resolved artifact path: ${artifact_path}" >&2
+    echo "Failed command: ${postrun_cmd[*]}" >&2
+    return 1
+  fi
 }
 
 if [[ ! -x "${PX4_DIR}/build/px4_sitl_default/bin/px4" ]]; then
@@ -141,7 +217,5 @@ if ! wait "${CONTROLLER_PID}"; then
   CONTROLLER_STATUS=$?
 fi
 
-if ! maybe_generate_postrun_analyses; then
-  echo "WARNING: automatic post-run analysis failed; runtime_log.csv is still available." >&2
-fi
+maybe_generate_postrun_analyses || true
 exit "${CONTROLLER_STATUS}"

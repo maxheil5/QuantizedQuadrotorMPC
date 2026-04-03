@@ -142,6 +142,18 @@ def _first_time(mask: np.ndarray, experiment_time_s: np.ndarray) -> float | None
     return float(experiment_time_s[int(indices[0])])
 
 
+def _mean_or_zero(mask: np.ndarray, values: np.ndarray) -> float:
+    if not np.any(mask):
+        return 0.0
+    return float(np.mean(values[mask]))
+
+
+def _masked_vector_mean(mask: np.ndarray, values: np.ndarray) -> list[float]:
+    if not np.any(mask):
+        return [0.0 for _ in range(values.shape[0])]
+    return np.mean(values[:, mask], axis=1).astype(float).tolist()
+
+
 def _dominant_mismatch_axis_from_fields(
     pre_div_match: dict[str, float],
     pre_div_overlap: dict[str, float],
@@ -273,6 +285,49 @@ def _sign_analysis_for_history(
     }
 
 
+def _mismatch_snapshot(
+    *,
+    idx: int | None,
+    experiment_time_s: np.ndarray,
+    baseline_control_history: np.ndarray,
+    raw_control_history: np.ndarray,
+    used_control_history: np.ndarray,
+    raw_analysis: dict[str, dict[str, float | int | None] | dict[str, np.ndarray]],
+    used_analysis: dict[str, dict[str, float | int | None] | dict[str, np.ndarray]],
+    lateral_position_residual: np.ndarray,
+    lateral_position_residual_norm: np.ndarray,
+    lateral_velocity_residual: np.ndarray,
+    lateral_velocity_residual_norm: np.ndarray,
+) -> dict[str, object] | None:
+    if idx is None:
+        return None
+    axis_name = "u2"
+    baseline_value = float(baseline_control_history[2, idx])
+    raw_value = float(raw_control_history[2, idx])
+    used_value = float(used_control_history[2, idx])
+    baseline_active = bool(raw_analysis["active_masks"][axis_name][idx])
+    raw_overlap = bool(raw_analysis["overlap_masks"][axis_name][idx])
+    used_overlap = bool(used_analysis["overlap_masks"][axis_name][idx])
+    raw_sign_match = bool(raw_analysis["sign_match_masks"][axis_name][idx]) if raw_overlap else None
+    used_sign_match = bool(used_analysis["sign_match_masks"][axis_name][idx]) if used_overlap else None
+    raw_magnitude_ratio = None if not baseline_active else float(abs(raw_value) / max(abs(baseline_value), 1.0e-12))
+    used_magnitude_ratio = None if not baseline_active else float(abs(used_value) / max(abs(baseline_value), 1.0e-12))
+    return {
+        "experiment_time_s": float(experiment_time_s[idx]),
+        "baseline_u2": baseline_value,
+        "raw_u2": raw_value,
+        "used_u2": used_value,
+        "raw_sign_match": raw_sign_match,
+        "used_sign_match": used_sign_match,
+        "raw_magnitude_ratio": raw_magnitude_ratio,
+        "used_magnitude_ratio": used_magnitude_ratio,
+        "lateral_position_residual_xy": lateral_position_residual[:, idx].astype(float).tolist(),
+        "lateral_position_residual_norm": float(lateral_position_residual_norm[idx]),
+        "lateral_velocity_residual_xy": lateral_velocity_residual[:, idx].astype(float).tolist(),
+        "lateral_velocity_residual_norm": float(lateral_velocity_residual_norm[idx]),
+    }
+
+
 def analyze_runtime_control_audit(
     log_path: Path,
     artifact_path: Path,
@@ -318,6 +373,23 @@ def analyze_runtime_control_audit(
         run.experiment_time_s,
         pre_divergence_mask,
     )
+    lateral_position_residual = run.reference_history[0:2, :] - run.state_history[0:2, :]
+    lateral_velocity_residual = run.reference_history[3:5, :] - run.state_history[3:5, :]
+    lateral_position_residual_norm = np.linalg.norm(lateral_position_residual, axis=0)
+    lateral_velocity_residual_norm = np.linalg.norm(lateral_velocity_residual, axis=0)
+    final_time_s = float(run.experiment_time_s[-1])
+    late_window_start_s = max(0.0, final_time_s - 2.0)
+    late_window_mask = np.asarray(run.experiment_time_s, dtype=float) >= late_window_start_s
+    u2_raw_mismatch_mask = np.logical_and(
+        raw_analysis["overlap_masks"]["u2"],
+        np.logical_not(raw_analysis["sign_match_masks"]["u2"]),
+    )
+    u2_used_mismatch_mask = np.logical_and(
+        used_analysis["overlap_masks"]["u2"],
+        np.logical_not(used_analysis["sign_match_masks"]["u2"]),
+    )
+    u2_first_raw_mismatch_idx = int(np.flatnonzero(u2_raw_mismatch_mask)[0]) if np.any(u2_raw_mismatch_mask) else None
+    u2_first_used_mismatch_idx = int(np.flatnonzero(u2_used_mismatch_mask)[0]) if np.any(u2_used_mismatch_mask) else None
     anchor_delta_history = run.control_used_history - run.control_raw_history
     anchor_intervention_masks: dict[str, np.ndarray] = {}
     anchor_sign_flip_masks: dict[str, np.ndarray] = {}
@@ -342,9 +414,17 @@ def analyze_runtime_control_audit(
             "experiment_time_s": float(run.experiment_time_s[idx]),
             "divergence_time_s": divergence_time_s,
             "baseline_z_error_integral": float(z_integral_history[idx]),
+            "lateral_position_residual_x": float(lateral_position_residual[0, idx]),
+            "lateral_position_residual_y": float(lateral_position_residual[1, idx]),
+            "lateral_position_residual_norm": float(lateral_position_residual_norm[idx]),
+            "lateral_velocity_residual_x": float(lateral_velocity_residual[0, idx]),
+            "lateral_velocity_residual_y": float(lateral_velocity_residual[1, idx]),
+            "lateral_velocity_residual_norm": float(lateral_velocity_residual_norm[idx]),
         }
         for control_idx in range(4):
             row[f"learned_control_{control_idx}"] = float(run.control_history[control_idx, idx])
+            row[f"raw_control_{control_idx}"] = float(run.control_raw_history[control_idx, idx])
+            row[f"used_control_{control_idx}"] = float(run.control_used_history[control_idx, idx])
             row[f"baseline_control_{control_idx}"] = float(baseline_control_history[control_idx, idx])
             row[f"control_internal_{control_idx}"] = float(control_internal_history[control_idx, idx])
             row[f"control_internal_near_lower_{control_idx}"] = bool(near_lower[control_idx, idx])
@@ -400,6 +480,9 @@ def analyze_runtime_control_audit(
     used_pre_divergence_sign_match_fraction_by_axis = used_analysis["pre_divergence_sign_match_fraction_by_axis"]
     used_pre_divergence_active_overlap_fraction_by_axis = used_analysis["pre_divergence_active_overlap_fraction_by_axis"]
     used_pre_divergence_overlap_sample_count_by_axis = used_analysis["pre_divergence_overlap_sample_count_by_axis"]
+    u2_late_raw_overlap_mask = np.logical_and(late_window_mask, raw_analysis["overlap_masks"]["u2"])
+    u2_late_used_overlap_mask = np.logical_and(late_window_mask, used_analysis["overlap_masks"]["u2"])
+    u2_late_active_mask = np.logical_and(late_window_mask, raw_analysis["active_masks"]["u2"])
     summary: dict[str, object] = {
         "artifact_path": str(artifact_path),
         "log_path": str(log_path),
@@ -433,6 +516,70 @@ def analyze_runtime_control_audit(
         "anchor_intervention_fraction_by_axis": anchor_intervention_fraction_by_axis,
         "first_anchor_intervention_time_s_by_axis": first_anchor_intervention_time_s_by_axis,
         "anchor_sign_flip_count_by_axis": anchor_sign_flip_count_by_axis,
+        "u2_first_raw_mismatch_time_s": _first_time(u2_raw_mismatch_mask, run.experiment_time_s),
+        "u2_first_used_mismatch_time_s": _first_time(u2_used_mismatch_mask, run.experiment_time_s),
+        "u2_late_window_start_s": late_window_start_s,
+        "u2_late_window_mean_raw_sign_match": _fraction_or_one(
+            u2_late_raw_overlap_mask,
+            raw_analysis["sign_match_masks"]["u2"],
+        ),
+        "u2_late_window_mean_used_sign_match": _fraction_or_one(
+            u2_late_used_overlap_mask,
+            used_analysis["sign_match_masks"]["u2"],
+        ),
+        "u2_late_window_mean_raw_magnitude_ratio": _mean_or_zero(
+            u2_late_active_mask,
+            raw_analysis["magnitude_ratio_by_axis"]["u2"],
+        ),
+        "u2_late_window_mean_used_magnitude_ratio": _mean_or_zero(
+            u2_late_active_mask,
+            used_analysis["magnitude_ratio_by_axis"]["u2"],
+        ),
+        "u2_first_raw_mismatch_snapshot": _mismatch_snapshot(
+            idx=u2_first_raw_mismatch_idx,
+            experiment_time_s=run.experiment_time_s,
+            baseline_control_history=baseline_control_history,
+            raw_control_history=run.control_raw_history,
+            used_control_history=run.control_used_history,
+            raw_analysis=raw_analysis,
+            used_analysis=used_analysis,
+            lateral_position_residual=lateral_position_residual,
+            lateral_position_residual_norm=lateral_position_residual_norm,
+            lateral_velocity_residual=lateral_velocity_residual,
+            lateral_velocity_residual_norm=lateral_velocity_residual_norm,
+        ),
+        "u2_first_used_mismatch_snapshot": _mismatch_snapshot(
+            idx=u2_first_used_mismatch_idx,
+            experiment_time_s=run.experiment_time_s,
+            baseline_control_history=baseline_control_history,
+            raw_control_history=run.control_raw_history,
+            used_control_history=run.control_used_history,
+            raw_analysis=raw_analysis,
+            used_analysis=used_analysis,
+            lateral_position_residual=lateral_position_residual,
+            lateral_position_residual_norm=lateral_position_residual_norm,
+            lateral_velocity_residual=lateral_velocity_residual,
+            lateral_velocity_residual_norm=lateral_velocity_residual_norm,
+        ),
+        "u2_late_window_mean_baseline_control": _mean_or_zero(late_window_mask, baseline_control_history[2, :]),
+        "u2_late_window_mean_raw_control": _mean_or_zero(late_window_mask, run.control_raw_history[2, :]),
+        "u2_late_window_mean_used_control": _mean_or_zero(late_window_mask, run.control_used_history[2, :]),
+        "u2_late_window_mean_lateral_position_residual_xy": _masked_vector_mean(
+            late_window_mask,
+            lateral_position_residual,
+        ),
+        "u2_late_window_mean_lateral_position_residual_norm": _mean_or_zero(
+            late_window_mask,
+            lateral_position_residual_norm,
+        ),
+        "u2_late_window_mean_lateral_velocity_residual_xy": _masked_vector_mean(
+            late_window_mask,
+            lateral_velocity_residual,
+        ),
+        "u2_late_window_mean_lateral_velocity_residual_norm": _mean_or_zero(
+            late_window_mask,
+            lateral_velocity_residual_norm,
+        ),
     }
     summary["dominant_mismatch_axis"] = _dominant_mismatch_axis(summary)
     summary["mapping_status"] = select_control_audit_mapping_status(summary)
