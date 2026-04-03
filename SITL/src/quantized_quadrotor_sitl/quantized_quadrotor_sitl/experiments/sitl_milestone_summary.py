@@ -38,7 +38,7 @@ def _load_optional_json(path: Path) -> dict[str, object]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _milestone_profile(metadata: dict[str, object]) -> str:
+def milestone_profile_for_metadata(metadata: dict[str, object]) -> str:
     controller_mode = str(metadata.get("controller_mode", ""))
     control_rate_hz = float(metadata.get("control_rate_hz", 0.0) or 0.0)
     pred_horizon = int(metadata.get("pred_horizon", 0) or 0)
@@ -56,7 +56,7 @@ def summarize_milestone_run(run_dir: Path) -> dict[str, object]:
     drift_summary = _load_optional_json(resolved_run_dir / "drift_summary.json")
     control_summary = _load_optional_json(resolved_run_dir / "control_audit_summary.json")
 
-    profile = _milestone_profile(metadata)
+    profile = milestone_profile_for_metadata(metadata)
     evaluation = evaluate_hover_gates(log_path, profile=profile) if profile != "unsupported" else {
         "passed": False,
         "runtime_validity": None,
