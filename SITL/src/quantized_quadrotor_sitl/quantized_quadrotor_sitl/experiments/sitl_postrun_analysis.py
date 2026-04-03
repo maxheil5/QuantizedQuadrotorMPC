@@ -7,6 +7,7 @@ from pathlib import Path
 from ..core.config import load_runtime_config
 from .sitl_control_audit import analyze_runtime_control_audit
 from .sitl_drift_analysis import analyze_runtime_drift
+from .sitl_runtime_health import analyze_runtime_health
 
 
 def _resolve_path(raw_path: str | Path, base_dir: Path) -> Path:
@@ -135,6 +136,11 @@ def run_postrun_edmd_analyses(
             "artifact_path": str(artifact_path),
         }
 
+    runtime_health_summary = analyze_runtime_health(
+        log_path=log_path,
+        output_dir=run_dir,
+        metadata_path=(run_dir / "run_metadata.json") if metadata_path is None else Path(metadata_path),
+    )
     drift_summary = analyze_runtime_drift(log_path=log_path, artifact_path=artifact_path, output_dir=run_dir)
     control_summary = analyze_runtime_control_audit(log_path=log_path, artifact_path=artifact_path, output_dir=run_dir)
     return {
@@ -145,6 +151,9 @@ def run_postrun_edmd_analyses(
         "metadata_path": str((run_dir / "run_metadata.json") if metadata_path is None else metadata_path),
         "controller_mode": str(metadata.get("controller_mode", "edmd_mpc")),
         "cost_state_mode": drift_summary.get("cost_state_mode"),
+        "runtime_health_summary_path": str(run_dir / "runtime_health_summary.json"),
+        "runtime_validity": runtime_health_summary.get("runtime_validity"),
+        "runtime_failure_reason": runtime_health_summary.get("runtime_failure_reason"),
         "drift_summary_path": str(run_dir / "drift_summary.json"),
         "drift_trace_path": str(run_dir / "drift_trace.csv"),
         "selected_branch": drift_summary.get("selected_branch"),

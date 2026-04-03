@@ -6,10 +6,20 @@ from pathlib import Path
 
 import pytest
 
+from quantized_quadrotor_sitl.experiments.sitl_runtime_health import compute_runtime_health_summary
 from quantized_quadrotor_sitl.experiments.sitl_runtime_metrics import compute_hover_gate_metrics, evaluate_hover_gates
 
 
-def _write_runtime_log(path: Path, z_values: list[float], x_values: list[float], u2_values: list[float], solver_ms: float, tick_dt_ms: float) -> None:
+def _write_runtime_log(
+    path: Path,
+    z_values: list[float],
+    x_values: list[float],
+    u2_values: list[float],
+    solver_ms: float | list[float],
+    tick_dt_ms: float | list[float],
+    *,
+    experiment_dt_s: float = 0.1,
+) -> None:
     header = [
         "step",
         "timestamp_ns",
@@ -28,6 +38,8 @@ def _write_runtime_log(path: Path, z_values: list[float], x_values: list[float],
         *[f"reference_{idx}" for idx in range(18)],
     ]
     rows = []
+    solver_series = solver_ms if isinstance(solver_ms, list) else [solver_ms] * len(z_values)
+    tick_series = tick_dt_ms if isinstance(tick_dt_ms, list) else [tick_dt_ms] * len(z_values)
     for step, (z_pos, x_pos, u2) in enumerate(zip(z_values, x_values, u2_values, strict=True)):
         state = [0.0] * 18
         reference = [0.0] * 18
@@ -44,10 +56,10 @@ def _write_runtime_log(path: Path, z_values: list[float], x_values: list[float],
         row = {
             "step": step,
             "timestamp_ns": 1000 * step,
-            "experiment_time_s": 0.1 * step,
+            "experiment_time_s": experiment_dt_s * step,
             "reference_index": step,
-            "tick_dt_ms": tick_dt_ms,
-            "solver_ms": solver_ms,
+            "tick_dt_ms": tick_series[step],
+            "solver_ms": solver_series[step],
             "px4_collective_command_newton": 50.0,
             "px4_collective_normalized": 50.0 / 62.0,
             "px4_thrust_body_z": -(50.0 / 62.0),
@@ -68,8 +80,19 @@ def _write_runtime_log(path: Path, z_values: list[float], x_values: list[float],
         writer.writerows(rows)
 
 
-def _write_run_metadata(path: Path) -> None:
+def _write_run_metadata(
+    path: Path,
+    *,
+    control_rate_hz: float = 50.0,
+    pred_horizon: int = 8,
+    reference_duration_s: float = 10.0,
+) -> None:
     payload = {
+        "config_path": "/tmp/runtime.yaml",
+        "control_rate_hz": control_rate_hz,
+        "pred_horizon": pred_horizon,
+        "reference_duration_s": reference_duration_s,
+        "reference_seed": 2141444,
         "vehicle_scaling": {
             "max_collective_thrust_newton": 62.0,
             "max_body_torque_x_nm": 1.0,
@@ -114,6 +137,49 @@ def test_compute_hover_gate_metrics_extracts_repeatable_validation_metrics(tmp_p
     assert metrics["tick_mean_ms"] == 10.5
     assert metrics["max_lateral_radius"] > 0.0
     assert metrics["max_lateral_error_radius"] == pytest.approx(0.09)
+
+
+def test_compute_runtime_health_summary_classifies_valid_light_run(tmp_path: Path):
+    run_dir = tmp_path / "4-3-26_1700_01"
+    run_dir.mkdir(parents=True)
+    samples = 501
+    _write_runtime_log(
+        run_dir / "runtime_log.csv",
+        [0.74 for _ in range(samples)],
+        [0.001 * step for step in range(samples)],
+        [0.02 for _ in range(samples)],
+        11.0,
+        20.0,
+        experiment_dt_s=0.02,
+    )
+    _write_run_metadata(run_dir / "run_metadata.json", control_rate_hz=50.0, pred_horizon=8, reference_duration_s=10.0)
+
+    summary = compute_runtime_health_summary(run_dir / "runtime_log.csv")
+
+    assert summary["runtime_validity"] == "valid_runtime"
+    assert summary["sample_count"] == samples
+    assert summary["effective_control_rate_hz"] == pytest.approx(50.0)
+
+
+def test_compute_runtime_health_summary_classifies_timing_collapse_run(tmp_path: Path):
+    run_dir = tmp_path / "4-3-26_1730"
+    run_dir.mkdir(parents=True)
+    samples = 200
+    _write_runtime_log(
+        run_dir / "runtime_log.csv",
+        [0.74 for _ in range(samples)],
+        [0.05 * step for step in range(samples)],
+        [0.02 for _ in range(samples)],
+        42.0,
+        50.0,
+        experiment_dt_s=0.05,
+    )
+    _write_run_metadata(run_dir / "run_metadata.json", control_rate_hz=50.0, pred_horizon=8, reference_duration_s=10.0)
+
+    summary = compute_runtime_health_summary(run_dir / "runtime_log.csv")
+
+    assert summary["runtime_validity"] == "timing_collapse"
+    assert "sample_count" in str(summary["runtime_failure_reason"])
 
 
 def test_evaluate_hover_gates_reports_standard_profile_pass(tmp_path: Path):
@@ -176,17 +242,28 @@ def test_evaluate_hover_gates_applies_light_residual_drift_checks(tmp_path: Path
 def test_evaluate_hover_gates_passes_light_anchor_confirmation_profile(tmp_path: Path):
     run_dir = tmp_path / "4-3-26_1700_01"
     run_dir.mkdir(parents=True)
-    z_values = [0.0] + [0.74 + 0.001 * min(step, 10) for step in range(1, 101)]
-    x_values = [0.003 * step for step in range(101)]
-    u2_values = [0.02 for _ in range(101)]
-    _write_runtime_log(run_dir / "runtime_log.csv", z_values, x_values, u2_values, 11.5, 10.5)
-    _write_run_metadata(run_dir / "run_metadata.json")
+    samples = 501
+    z_values = [0.74 + 0.0001 * min(step, 10) for step in range(samples)]
+    x_values = [0.0006 * step for step in range(samples)]
+    u2_values = [0.02 for _ in range(samples)]
+    _write_runtime_log(
+        run_dir / "runtime_log.csv",
+        z_values,
+        x_values,
+        u2_values,
+        11.5,
+        20.0,
+        experiment_dt_s=0.02,
+    )
+    _write_run_metadata(run_dir / "run_metadata.json", control_rate_hz=50.0, pred_horizon=8, reference_duration_s=10.0)
     _write_drift_summary(run_dir / "drift_summary.json", divergence_time_s=10.0)
     _write_control_audit_summary(run_dir / "control_audit_summary.json", u2_first_used_mismatch_time_s=8.4)
 
     evaluation = evaluate_hover_gates(run_dir / "runtime_log.csv", profile="light_anchor_confirmation")
 
     assert evaluation["passed"] is True
+    assert evaluation["runtime_validity"] == "valid_runtime"
+    assert evaluation["controller_quality_evaluated"] is True
     assert evaluation["checks"]["max_lateral_error_radius"] is True
     assert evaluation["checks"]["final_position_error"] is True
     assert evaluation["checks"]["position_rmse"] is True
@@ -199,11 +276,20 @@ def test_evaluate_hover_gates_passes_light_anchor_confirmation_profile(tmp_path:
 def test_evaluate_hover_gates_blocks_standard_anchor_h8_promotion_when_u2_bounds_are_hot(tmp_path: Path):
     run_dir = tmp_path / "4-3-26_1800_01"
     run_dir.mkdir(parents=True)
-    z_values = [0.0] + [0.76 for _ in range(100)]
-    x_values = [0.01 * step for step in range(101)]
-    u2_values = [0.02 for _ in range(101)]
-    _write_runtime_log(run_dir / "runtime_log.csv", z_values, x_values, u2_values, 9.8, 8.0)
-    _write_run_metadata(run_dir / "run_metadata.json")
+    samples = 1001
+    z_values = [0.76 for _ in range(samples)]
+    x_values = [0.0008 * step for step in range(samples)]
+    u2_values = [0.02 for _ in range(samples)]
+    _write_runtime_log(
+        run_dir / "runtime_log.csv",
+        z_values,
+        x_values,
+        u2_values,
+        9.8,
+        10.0,
+        experiment_dt_s=0.01,
+    )
+    _write_run_metadata(run_dir / "run_metadata.json", control_rate_hz=100.0, pred_horizon=8, reference_duration_s=10.0)
     _write_drift_summary(
         run_dir / "drift_summary.json",
         divergence_time_s=10.0,
@@ -214,5 +300,38 @@ def test_evaluate_hover_gates_blocks_standard_anchor_h8_promotion_when_u2_bounds
     evaluation = evaluate_hover_gates(run_dir / "runtime_log.csv", profile="standard_anchor_h8_promotion")
 
     assert evaluation["passed"] is False
+    assert evaluation["runtime_validity"] == "valid_runtime"
+    assert evaluation["controller_quality_evaluated"] is True
     assert evaluation["checks"]["post_4s_internal_bound_fraction_u2"] is False
     assert evaluation["checks"]["divergence_reaches_end"] is True
+
+
+def test_evaluate_hover_gates_stops_before_control_quality_when_runtime_is_invalid(tmp_path: Path):
+    run_dir = tmp_path / "4-3-26_1730"
+    run_dir.mkdir(parents=True)
+    samples = 200
+    _write_runtime_log(
+        run_dir / "runtime_log.csv",
+        [0.74 for _ in range(samples)],
+        [0.05 * step for step in range(samples)],
+        [0.02 for _ in range(samples)],
+        42.0,
+        50.0,
+        experiment_dt_s=0.05,
+    )
+    _write_run_metadata(run_dir / "run_metadata.json", control_rate_hz=50.0, pred_horizon=8, reference_duration_s=10.0)
+    _write_drift_summary(
+        run_dir / "drift_summary.json",
+        divergence_time_s=2.6,
+        post_four={"u0": 1.0, "u1": 1.0, "u2": 1.0, "u3": 1.0},
+    )
+    _write_control_audit_summary(run_dir / "control_audit_summary.json", u2_first_used_mismatch_time_s=1.6)
+
+    evaluation = evaluate_hover_gates(run_dir / "runtime_log.csv", profile="light_anchor_confirmation")
+
+    assert evaluation["passed"] is False
+    assert evaluation["runtime_validity"] == "timing_collapse"
+    assert evaluation["controller_quality_evaluated"] is False
+    assert evaluation["checks"]["runtime_validity"] is False
+    assert evaluation["diagnostic_branch"] is None
+    assert evaluation["control_audit_mapping_status"] is None

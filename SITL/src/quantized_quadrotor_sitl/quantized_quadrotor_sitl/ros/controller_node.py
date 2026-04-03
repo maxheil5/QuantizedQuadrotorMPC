@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import os
 from dataclasses import asdict
 from enum import Enum
 from pathlib import Path
@@ -27,6 +28,7 @@ from ..quantization.partition import partition_range
 from ..telemetry.adapter import physical_control_to_px4_wrench
 from ..utils.control_anchor import apply_moment_authority_anchor
 from ..utils.control_bounds import RuntimeControlCoordinates, runtime_edmd_control_coordinates
+from ..utils.host import runtime_host_snapshot
 from ..utils.io import create_sitl_results_directory, write_json
 from ..utils.state import state18_history_to_hover_local_residual, state18_to_hover_local_residual, takeoff_hold_trim_state18
 from ..utils.state import hover_local_translation_rotated
@@ -46,7 +48,8 @@ class ControllerNode(Node):
     def __init__(self) -> None:
         super().__init__("koopman_mpc_controller_node")
         config_path = self.declare_parameter("config_path", "configs/sitl_runtime.yaml").value
-        self.config: RuntimeConfig = load_runtime_config(self._resolve_path(config_path))
+        self.config_path = self._resolve_path(config_path)
+        self.config: RuntimeConfig = load_runtime_config(self.config_path)
         self.params = get_params()
         self.model = None
         self.metadata: dict[str, object] = {}
@@ -251,11 +254,14 @@ class ControllerNode(Node):
 
     def _write_run_metadata(self, initial_state: np.ndarray | None = None) -> None:
         payload: dict[str, object] = {
+            "config_path": str(self.config_path),
             "controller_mode": self.config.controller_mode,
+            "control_rate_hz": float(self.config.control_rate_hz),
             "reference_mode": self.config.reference_mode,
             "reference_seed": int(self.config.reference_seed),
             "reference_duration_s": float(self.config.reference_duration_s),
             "cost_state_mode": self.config.mpc.cost_state_mode,
+            "pred_horizon": int(self.config.mpc.pred_horizon),
             "model_artifact": self.config.model_artifact,
             "model_affine_enabled": bool(self.model.affine_enabled) if self.model is not None else False,
             "model_residual_enabled": bool(self.residual_enabled),
@@ -267,6 +273,7 @@ class ControllerNode(Node):
             "run_dir": str(self.log_path.parent),
             "log_path": str(self.log_path),
             "metadata_path": str(self.metadata_path),
+            "host_snapshot": runtime_host_snapshot(headless=os.getenv("HEADLESS", "0") == "1"),
         }
         if self.control_coordinates is not None:
             payload["control_coordinates"] = {

@@ -6,6 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .sitl_runtime_health import compute_runtime_health_summary
+
 
 HOVER_GATE_PROFILES: dict[str, dict[str, float]] = {
     "light": {
@@ -26,6 +28,10 @@ HOVER_GATE_PROFILES: dict[str, dict[str, float]] = {
         "tick_mean_ms_max": 12.0,
     },
     "light_anchor_confirmation": {
+        "runtime_sample_count_min": 440.0,
+        "runtime_effective_control_rate_hz_min": 45.0,
+        "runtime_tick_dt_ms_p90_max": 25.0,
+        "runtime_solver_ms_p90_max": 18.0,
         "final_altitude_error_max": 0.15,
         "max_lateral_error_radius_max": 0.75,
         "final_position_error_max": 0.75,
@@ -38,6 +44,10 @@ HOVER_GATE_PROFILES: dict[str, dict[str, float]] = {
         "require_divergence_to_reach_end": 1.0,
     },
     "standard_anchor_h8_promotion": {
+        "runtime_sample_count_min": 850.0,
+        "runtime_effective_control_rate_hz_min": 85.0,
+        "runtime_tick_dt_ms_p90_max": 14.0,
+        "runtime_solver_ms_p90_max": 10.0,
         "final_altitude_error_max": 0.20,
         "max_lateral_error_radius_max": 1.50,
         "final_position_error_max": 1.50,
@@ -135,20 +145,70 @@ def load_control_audit_summary(log_path: Path, control_audit_summary_path: Path 
     return payload if isinstance(payload, dict) else None
 
 
+def load_runtime_health_summary(log_path: Path, runtime_health_summary_path: Path | None = None) -> dict[str, object]:
+    summary_path = (
+        Path(runtime_health_summary_path)
+        if runtime_health_summary_path is not None
+        else Path(log_path).parent / "runtime_health_summary.json"
+    )
+    if summary_path.exists():
+        with summary_path.open("r", encoding="utf-8") as stream:
+            payload = json.load(stream)
+        if isinstance(payload, dict):
+            return payload
+    return compute_runtime_health_summary(Path(log_path))
+
+
 def evaluate_hover_gates(
     log_path: Path,
     profile: str,
     drift_summary_path: Path | None = None,
     control_audit_summary_path: Path | None = None,
+    runtime_health_summary_path: Path | None = None,
 ) -> dict[str, object]:
     if profile not in HOVER_GATE_PROFILES:
         raise ValueError(f"unsupported hover-gate profile: {profile}")
 
     thresholds = HOVER_GATE_PROFILES[profile]
     metrics = compute_hover_gate_metrics(log_path)
+    runtime_health_summary = load_runtime_health_summary(log_path, runtime_health_summary_path)
     drift_summary = load_drift_summary(log_path, drift_summary_path)
     control_audit_summary = load_control_audit_summary(log_path, control_audit_summary_path)
     checks: dict[str, bool] = {}
+    runtime_checks: dict[str, bool] = {}
+    if "runtime_sample_count_min" in thresholds:
+        runtime_checks["runtime_sample_count"] = float(runtime_health_summary["sample_count"]) >= thresholds["runtime_sample_count_min"]
+    if "runtime_effective_control_rate_hz_min" in thresholds:
+        runtime_checks["runtime_effective_control_rate_hz"] = (
+            float(runtime_health_summary["effective_control_rate_hz"]) >= thresholds["runtime_effective_control_rate_hz_min"]
+        )
+    if "runtime_tick_dt_ms_p90_max" in thresholds:
+        runtime_checks["runtime_tick_dt_ms_p90"] = (
+            float(runtime_health_summary["tick_dt_ms_p90"]) <= thresholds["runtime_tick_dt_ms_p90_max"]
+        )
+    if "runtime_solver_ms_p90_max" in thresholds:
+        runtime_checks["runtime_solver_ms_p90"] = (
+            float(runtime_health_summary["solver_ms_p90"]) <= thresholds["runtime_solver_ms_p90_max"]
+        )
+    if runtime_checks:
+        runtime_checks["runtime_validity"] = runtime_health_summary.get("runtime_validity") == "valid_runtime"
+        if not all(runtime_checks.values()):
+            return {
+                "profile": profile,
+                "passed": False,
+                "checks": runtime_checks,
+                "metrics": metrics,
+                "runtime_validity": runtime_health_summary.get("runtime_validity"),
+                "runtime_failure_reason": runtime_health_summary.get("runtime_failure_reason"),
+                "controller_quality_evaluated": False,
+                "diagnostic_branch": None,
+                "dominant_drift_channel": None,
+                "early_window_rmse_ratio": None,
+                "post_4s_internal_bound_fraction": None,
+                "control_audit_mapping_status": None,
+                "control_audit_dominant_mismatch_axis": None,
+                "u2_first_used_mismatch_time_s": None,
+            }
     if "z_max_min" in thresholds:
         checks["z_max"] = metrics["z_max"] >= thresholds["z_max_min"]
     if "final_altitude_error_max" in thresholds:
@@ -197,6 +257,9 @@ def evaluate_hover_gates(
         "passed": bool(all(checks.values())),
         "checks": checks,
         "metrics": metrics,
+        "runtime_validity": runtime_health_summary.get("runtime_validity"),
+        "runtime_failure_reason": runtime_health_summary.get("runtime_failure_reason"),
+        "controller_quality_evaluated": True,
         "diagnostic_branch": None if drift_summary is None else drift_summary.get("selected_branch"),
         "dominant_drift_channel": None if drift_summary is None else drift_summary.get("dominant_error_group"),
         "early_window_rmse_ratio": None if drift_summary is None else drift_summary.get("early_window_rmse_ratio"),

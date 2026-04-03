@@ -72,7 +72,10 @@ def _write_runtime_log(path: Path) -> None:
 
 def _write_run_metadata(path: Path, artifact_path: str, cost_state_mode: str = "decoded24_raw") -> None:
     payload = {
+        "config_path": "/tmp/postrun.yaml",
+        "control_rate_hz": 50.0,
         "controller_mode": "edmd_mpc",
+        "pred_horizon": 8,
         "reference_mode": "takeoff_hold",
         "reference_seed": 2141444,
         "reference_duration_s": 10.0,
@@ -168,6 +171,8 @@ def test_run_postrun_edmd_analyses_writes_drift_and_control_sidecars(tmp_path: P
     assert summary["skipped"] is False
     assert Path(summary["run_dir"]) == run_dir
     assert summary["cost_state_mode"] == "minimal_residual"
+    assert Path(summary["runtime_health_summary_path"]) == run_dir / "runtime_health_summary.json"
+    assert (run_dir / "runtime_health_summary.json").exists()
     assert (run_dir / "drift_summary.json").exists()
     assert (run_dir / "drift_trace.csv").exists()
     assert (run_dir / "control_audit_summary.json").exists()
@@ -194,6 +199,8 @@ def test_run_postrun_edmd_analyses_writes_sidecars_from_run_dir(tmp_path: Path):
 
     assert summary["skipped"] is False
     assert Path(summary["run_dir"]) == run_dir
+    assert Path(summary["runtime_health_summary_path"]) == run_dir / "runtime_health_summary.json"
+    assert (run_dir / "runtime_health_summary.json").exists()
     assert (run_dir / "drift_summary.json").exists()
     assert (run_dir / "control_audit_summary.json").exists()
 
@@ -219,6 +226,8 @@ def test_run_postrun_edmd_analyses_writes_sidecars_from_log_path(tmp_path: Path)
 
     assert summary["skipped"] is False
     assert Path(summary["run_dir"]) == run_dir
+    assert Path(summary["runtime_health_summary_path"]) == run_dir / "runtime_health_summary.json"
+    assert (run_dir / "runtime_health_summary.json").exists()
     assert (run_dir / "drift_summary.json").exists()
     assert (run_dir / "control_audit_summary.json").exists()
 
