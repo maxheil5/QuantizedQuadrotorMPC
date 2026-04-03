@@ -4,6 +4,7 @@ set -eo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_PATH="${1:-${ROOT_DIR}/configs/sitl_runtime_sitl_retrain_edmd_anchor_h8.yaml}"
 PACKAGE_ROOT="${ROOT_DIR}/src/quantized_quadrotor_sitl"
+INTERRUPT_REQUESTED=0
 
 if [[ ! -f "${CONFIG_PATH}" ]]; then
   echo "Missing config: ${CONFIG_PATH}" >&2
@@ -20,6 +21,20 @@ source /opt/ros/humble/setup.bash
 if [[ -f "${ROOT_DIR}/install/setup.bash" ]]; then
   source "${ROOT_DIR}/install/setup.bash"
 fi
+
+handle_interrupt() {
+  local signal="$1"
+  if [[ "${INTERRUPT_REQUESTED}" == "1" ]]; then
+    echo "Second ${signal} received; exiting standard anchor wrapper immediately." >&2
+    trap - INT TERM
+    exit 130
+  fi
+  INTERRUPT_REQUESTED=1
+  echo "Received ${signal}; waiting for the SITL runner to finalize artifacts..." >&2
+}
+
+trap 'handle_interrupt INT' INT
+trap 'handle_interrupt TERM' TERM
 
 print_run_output_summary() {
   local run_dir="$1"

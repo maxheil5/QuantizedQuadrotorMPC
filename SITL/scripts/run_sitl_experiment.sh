@@ -35,6 +35,8 @@ SIMULATION_STACK_STOPPED=0
 PX4_PGID=""
 RUN_LAUNCH_EPOCH="$(date +%s)"
 PREVIOUS_ACTIVE_RUN_DIR=""
+INTERRUPT_REQUESTED=0
+INTERRUPT_SIGNAL=""
 GZ_MODELS_DIR="${ROOT_DIR}/artifacts/generated/gazebo_models"
 GZ_WORLDS_DIR="${ROOT_DIR}/configs/gazebo/worlds"
 PX4_BUNDLED_MODELS_DIR="${PX4_DIR}/Tools/simulation/gz/models"
@@ -96,7 +98,7 @@ cleanup() {
   stop_gazebo_video_recording
   wait "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
 
 require_running() {
   local pid="$1"
@@ -106,6 +108,27 @@ require_running() {
     exit 1
   fi
 }
+
+request_graceful_shutdown() {
+  local signal="$1"
+  if [[ "${INTERRUPT_REQUESTED}" == "1" ]]; then
+    echo "Second ${signal} received; forcing immediate shutdown." >&2
+    trap - EXIT INT TERM
+    kill "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
+    stop_simulation_stack
+    stop_gazebo_video_recording
+    exit 130
+  fi
+
+  INTERRUPT_REQUESTED=1
+  INTERRUPT_SIGNAL="${signal}"
+  echo "Received ${signal}; stopping the simulation and finalizing run artifacts..." >&2
+  kill "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
+  stop_simulation_stack
+}
+
+trap 'request_graceful_shutdown INT' INT
+trap 'request_graceful_shutdown TERM' TERM
 
 resolve_process_group_id() {
   local pid="$1"

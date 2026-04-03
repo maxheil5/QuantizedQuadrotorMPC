@@ -8,6 +8,8 @@ def test_standard_anchor_trial_script_uses_standard_anchor_config_and_backfill()
     script_text = script_path.read_text(encoding="utf-8")
 
     assert "sitl_runtime_sitl_retrain_edmd_anchor_h8.yaml" in script_text
+    assert "handle_interrupt" in script_text
+    assert "waiting for the SITL runner to finalize artifacts" in script_text
     assert "SITL_PRINT_RUN_OUTPUTS=0" in script_text
     assert "--run-dir \"${run_dir}\"" in script_text
     assert "--base-dir \"${ROOT_DIR}\"" in script_text

@@ -14,6 +14,9 @@ def test_run_sitl_experiment_script_supports_gazebo_video_recording():
     assert "stop_simulation_stack" in script_text
     assert "setsid env" in script_text
     assert "Stopping PX4/Gazebo simulation stack..." in script_text
+    assert "request_graceful_shutdown" in script_text
+    assert "Received ${signal}; stopping the simulation and finalizing run artifacts..." in script_text
+    assert "Second ${signal} received; forcing immediate shutdown." in script_text
     assert "finalize_gazebo_video_recording" in script_text
     assert "print_run_output_summary" in script_text
     assert "xdotool search --onlyvisible" in script_text
