@@ -9,7 +9,10 @@ def test_run_sitl_experiment_script_supports_gazebo_video_recording():
 
     assert "AUTO_GAZEBO_VIDEO_RECORDING" in script_text
     assert "maybe_start_gazebo_video_recording" in script_text
+    assert "stop_gazebo_video_recording" in script_text
+    assert "finalize_gazebo_video_recording" in script_text
     assert "gazebo_recording.mp4" in script_text
+    assert ".recording.mkv" in script_text
     assert "ffmpeg" in script_text
 
 

@@ -25,6 +25,10 @@ GAZEBO_VIDEO_GEOMETRY="${GAZEBO_VIDEO_GEOMETRY:-}"
 GAZEBO_VIDEO_CODEC="${GAZEBO_VIDEO_CODEC:-libx264}"
 GAZEBO_VIDEO_PRESET="${GAZEBO_VIDEO_PRESET:-veryfast}"
 GAZEBO_VIDEO_CRF="${GAZEBO_VIDEO_CRF:-23}"
+VIDEO_RECORDER_PID=0
+VIDEO_RECORDER_OUTPUT_PATH=""
+VIDEO_RECORDER_TEMP_PATH=""
+VIDEO_RECORDER_FINALIZED=0
 GZ_MODELS_DIR="${ROOT_DIR}/artifacts/generated/gazebo_models"
 GZ_WORLDS_DIR="${ROOT_DIR}/configs/gazebo/worlds"
 PX4_BUNDLED_MODELS_DIR="${PX4_DIR}/Tools/simulation/gz/models"
@@ -81,15 +85,12 @@ AGENT_PID=$!
 
 cleanup() {
   trap - EXIT INT TERM
-  if kill -0 "${VIDEO_RECORDER_PID:-0}" >/dev/null 2>&1; then
-    kill -INT "${VIDEO_RECORDER_PID}" >/dev/null 2>&1 || true
-  fi
+  stop_gazebo_video_recording
   kill "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
   kill "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
   kill "${PX4_PID:-0}" >/dev/null 2>&1 || true
   kill "${GCS_HEARTBEAT_PID:-0}" >/dev/null 2>&1 || true
   kill "${AGENT_PID:-0}" >/dev/null 2>&1 || true
-  wait "${VIDEO_RECORDER_PID:-0}" >/dev/null 2>&1 || true
   wait "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
   wait "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
   wait "${PX4_PID:-0}" >/dev/null 2>&1 || true
@@ -243,7 +244,7 @@ maybe_start_gazebo_video_recording() {
     return 0
   fi
 
-  local resolved_results_dir run_dir output_path geometry width height x y deadline
+  local resolved_results_dir run_dir output_path geometry width height x y deadline base_output_path
   if ! resolved_results_dir="$(resolve_results_dir_from_config)"; then
     echo "WARNING: failed to resolve results directory for Gazebo video recording." >&2
     return 0
@@ -254,6 +255,13 @@ maybe_start_gazebo_video_recording() {
   fi
   output_path="${GAZEBO_VIDEO_OUTPUT_PATH:-${run_dir}/${GAZEBO_VIDEO_OUTPUT_NAME}}"
   mkdir -p "$(dirname "${output_path}")"
+  base_output_path="${output_path%.*}"
+  if [[ "${base_output_path}" == "${output_path}" ]]; then
+    base_output_path="${output_path}"
+  fi
+  VIDEO_RECORDER_OUTPUT_PATH="${output_path}"
+  VIDEO_RECORDER_TEMP_PATH="${base_output_path}.recording.mkv"
+  VIDEO_RECORDER_FINALIZED=0
 
   deadline=$((SECONDS + GAZEBO_VIDEO_WAIT_SECONDS))
   while (( SECONDS < deadline )); do
@@ -278,8 +286,8 @@ maybe_start_gazebo_video_recording() {
     -preset "${GAZEBO_VIDEO_PRESET}" \
     -crf "${GAZEBO_VIDEO_CRF}" \
     -pix_fmt yuv420p \
-    -movflags +faststart \
-    "${output_path}" >/dev/null 2>&1 &
+    -f matroska \
+    "${VIDEO_RECORDER_TEMP_PATH}" >/dev/null 2>&1 &
   VIDEO_RECORDER_PID=$!
   sleep 1
   if ! kill -0 "${VIDEO_RECORDER_PID}" >/dev/null 2>&1; then
@@ -287,7 +295,56 @@ maybe_start_gazebo_video_recording() {
     VIDEO_RECORDER_PID=0
     return 0
   fi
-  echo "Recording Gazebo video to ${output_path}" >&2
+  echo "Recording Gazebo video to ${VIDEO_RECORDER_TEMP_PATH} (will finalize to ${VIDEO_RECORDER_OUTPUT_PATH})" >&2
+}
+
+finalize_gazebo_video_recording() {
+  if [[ "${VIDEO_RECORDER_FINALIZED:-0}" == "1" ]]; then
+    return 0
+  fi
+  VIDEO_RECORDER_FINALIZED=1
+
+  if [[ -z "${VIDEO_RECORDER_TEMP_PATH:-}" || ! -f "${VIDEO_RECORDER_TEMP_PATH}" ]]; then
+    return 0
+  fi
+  if [[ -z "${VIDEO_RECORDER_OUTPUT_PATH:-}" ]]; then
+    return 0
+  fi
+
+  if [[ "${VIDEO_RECORDER_OUTPUT_PATH}" == *.mp4 ]]; then
+    if ! command -v ffmpeg >/dev/null 2>&1; then
+      echo "WARNING: ffmpeg is unavailable for MP4 finalization; leaving ${VIDEO_RECORDER_TEMP_PATH} in place." >&2
+      return 1
+    fi
+    if ffmpeg -y -loglevel error -i "${VIDEO_RECORDER_TEMP_PATH}" -c copy -movflags +faststart "${VIDEO_RECORDER_OUTPUT_PATH}" >/dev/null 2>&1; then
+      rm -f "${VIDEO_RECORDER_TEMP_PATH}" >/dev/null 2>&1 || true
+      echo "Finalized Gazebo video to ${VIDEO_RECORDER_OUTPUT_PATH}" >&2
+      return 0
+    fi
+    echo "WARNING: failed to remux Gazebo recording to MP4; keeping ${VIDEO_RECORDER_TEMP_PATH}." >&2
+    return 1
+  fi
+
+  mv -f "${VIDEO_RECORDER_TEMP_PATH}" "${VIDEO_RECORDER_OUTPUT_PATH}"
+  echo "Finalized Gazebo video to ${VIDEO_RECORDER_OUTPUT_PATH}" >&2
+}
+
+stop_gazebo_video_recording() {
+  local pid="${VIDEO_RECORDER_PID:-0}"
+  local wait_count=0
+  if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" >/dev/null 2>&1; then
+    kill -INT "${pid}" >/dev/null 2>&1 || true
+    while kill -0 "${pid}" >/dev/null 2>&1 && (( wait_count < 20 )); do
+      sleep 0.25
+      wait_count=$((wait_count + 1))
+    done
+    if kill -0 "${pid}" >/dev/null 2>&1; then
+      kill -TERM "${pid}" >/dev/null 2>&1 || true
+    fi
+    wait "${pid}" >/dev/null 2>&1 || true
+  fi
+  VIDEO_RECORDER_PID=0
+  finalize_gazebo_video_recording || true
 }
 
 maybe_generate_postrun_analyses() {
@@ -375,5 +432,6 @@ if ! wait "${CONTROLLER_PID}"; then
   CONTROLLER_STATUS=$?
 fi
 
+stop_gazebo_video_recording
 maybe_generate_postrun_analyses || true
 exit "${CONTROLLER_STATUS}"
