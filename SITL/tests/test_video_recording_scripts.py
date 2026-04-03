@@ -15,7 +15,7 @@ def test_run_sitl_experiment_script_supports_gazebo_video_recording():
     assert "setsid env" in script_text
     assert "Stopping PX4/Gazebo simulation stack..." in script_text
     assert "request_graceful_shutdown" in script_text
-    assert "Received ${signal}; stopping the simulation and finalizing run artifacts..." in script_text
+    assert "Received ${signal}; stopping the simulation and finalizing run artifacts. Do not press Ctrl-C again unless you want to abort cleanup." in script_text
     assert "Second ${signal} received; forcing immediate shutdown." in script_text
     assert "finalize_gazebo_video_recording" in script_text
     assert "print_run_output_summary" in script_text
@@ -26,6 +26,7 @@ def test_run_sitl_experiment_script_supports_gazebo_video_recording():
     assert "RUN_LAUNCH_EPOCH" in script_text
     assert "metadata_path.stat().st_mtime >= launch_epoch" in script_text
     assert 'setsar=1' in script_text
+    assert 'Gazebo video recorder failed to start after ${GAZEBO_VIDEO_WAIT_SECONDS}s.' in script_text
     assert 'Finalized Gazebo video to ${VIDEO_RECORDER_OUTPUT_PATH} after re-encoding.' in script_text
     assert 'failed to finalize Gazebo recording to MP4' in script_text
     assert "Stored files:" in script_text

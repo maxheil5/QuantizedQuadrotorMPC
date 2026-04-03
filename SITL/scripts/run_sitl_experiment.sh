@@ -123,7 +123,7 @@ request_graceful_shutdown() {
 
   INTERRUPT_REQUESTED=1
   INTERRUPT_SIGNAL="${signal}"
-  echo "Received ${signal}; stopping the simulation and finalizing run artifacts..." >&2
+  echo "Received ${signal}; stopping the simulation and finalizing run artifacts. Do not press Ctrl-C again unless you want to abort cleanup." >&2
   kill "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
   stop_simulation_stack
 }
@@ -310,6 +310,7 @@ maybe_start_gazebo_video_recording() {
   fi
 
   local resolved_results_dir run_dir output_path geometry width height x y deadline base_output_path
+  local attempt_deadline start_ok
   if ! resolved_results_dir="$(resolve_results_dir_from_config)"; then
     echo "WARNING: failed to resolve results directory for Gazebo video recording." >&2
     return 0
@@ -343,24 +344,37 @@ maybe_start_gazebo_video_recording() {
     return 0
   fi
 
-  ffmpeg -y -loglevel error \
-    -f x11grab \
-    -framerate "${GAZEBO_VIDEO_FPS}" \
-    -video_size "${width}x${height}" \
-    -draw_mouse 0 \
-    -i "${GAZEBO_VIDEO_DISPLAY}+${x},${y}" \
-    -c:v "${GAZEBO_VIDEO_CODEC}" \
-    -preset "${GAZEBO_VIDEO_PRESET}" \
-    -crf "${GAZEBO_VIDEO_CRF}" \
-    -vf "setsar=1" \
-    -pix_fmt yuv420p \
-    -f matroska \
-    "${VIDEO_RECORDER_TEMP_PATH}" >/dev/null 2>&1 &
-  VIDEO_RECORDER_PID=$!
-  sleep 1
-  if ! kill -0 "${VIDEO_RECORDER_PID}" >/dev/null 2>&1; then
-    echo "WARNING: Gazebo video recorder failed to start." >&2
+  attempt_deadline=$((SECONDS + GAZEBO_VIDEO_WAIT_SECONDS))
+  start_ok=0
+  while (( SECONDS < attempt_deadline )); do
+    rm -f "${VIDEO_RECORDER_TEMP_PATH}" >/dev/null 2>&1 || true
+    ffmpeg -y -loglevel error \
+      -f x11grab \
+      -framerate "${GAZEBO_VIDEO_FPS}" \
+      -video_size "${width}x${height}" \
+      -draw_mouse 0 \
+      -i "${GAZEBO_VIDEO_DISPLAY}+${x},${y}" \
+      -c:v "${GAZEBO_VIDEO_CODEC}" \
+      -preset "${GAZEBO_VIDEO_PRESET}" \
+      -crf "${GAZEBO_VIDEO_CRF}" \
+      -vf "setsar=1" \
+      -pix_fmt yuv420p \
+      -f matroska \
+      "${VIDEO_RECORDER_TEMP_PATH}" >/dev/null 2>&1 &
+    VIDEO_RECORDER_PID=$!
+    sleep 1
+    if kill -0 "${VIDEO_RECORDER_PID}" >/dev/null 2>&1; then
+      start_ok=1
+      break
+    fi
+    wait "${VIDEO_RECORDER_PID}" >/dev/null 2>&1 || true
     VIDEO_RECORDER_PID=0
+    sleep 0.5
+  done
+  if [[ "${start_ok}" != "1" ]]; then
+    echo "WARNING: Gazebo video recorder failed to start after ${GAZEBO_VIDEO_WAIT_SECONDS}s." >&2
+    VIDEO_RECORDER_PID=0
+    rm -f "${VIDEO_RECORDER_TEMP_PATH}" >/dev/null 2>&1 || true
     return 0
   fi
   echo "Recording Gazebo video from ${VIDEO_RECORDER_CAPTURE_SOURCE:-unknown} geometry ${width}x${height}+${x},${y} to ${VIDEO_RECORDER_TEMP_PATH} (will finalize to ${VIDEO_RECORDER_OUTPUT_PATH})" >&2
