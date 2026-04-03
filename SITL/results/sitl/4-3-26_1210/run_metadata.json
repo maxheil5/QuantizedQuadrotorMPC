@@ -1,0 +1,158 @@
+{
+  "baseline": {
+    "angular_rate_gains_diag": [
+      0.25,
+      0.25,
+      0.15
+    ],
+    "attitude_gains_diag": [
+      2.5,
+      2.5,
+      0.8
+    ],
+    "max_tilt_deg": 12.0,
+    "position_gains_diag": [
+      0.5,
+      0.5,
+      5.5
+    ],
+    "velocity_gains_diag": [
+      0.8,
+      0.8,
+      3.0
+    ],
+    "z_integral_gain": 1.2,
+    "z_integral_limit": 1.5
+  },
+  "control_coordinates": {
+    "internal_lower_bounds": [
+      -1.8421646337844417,
+      -7.2906130049138556,
+      -6.400458518790151,
+      -5.346110718148838
+    ],
+    "internal_upper_bounds": [
+      2.8050760795375416,
+      5.477549580963758,
+      8.526528595835384,
+      2.7204451035559165
+    ],
+    "learned_bound_margin_fraction": 0.05,
+    "normalized": true,
+    "physical_lower_bounds": [
+      43.00205297070016,
+      -0.2765297592692346,
+      -0.3311429790063477,
+      -0.3284177868193237
+    ],
+    "physical_upper_bounds": [
+      61.000108051089484,
+      0.2080056962080836,
+      0.44197489257191713,
+      0.1627051478763502
+    ],
+    "scale": [
+      3.8728476080000136,
+      0.037948722239270725,
+      0.05179329664060339,
+      0.06088384504501971
+    ],
+    "trim": [
+      50.13647586619446,
+      0.0001396886082562038,
+      0.0003578676932276212,
+      -0.0029260102620308095
+    ]
+  },
+  "controller_mode": "edmd_mpc",
+  "cost_state_mode": "decoded24_raw",
+  "initial_state": [
+    -0.003816936630755663,
+    0.04004482552409172,
+    -0.06798548996448517,
+    0.007803868968039751,
+    0.003879101714119315,
+    -0.02243022434413433,
+    0.9945150754161579,
+    -0.10459347272214847,
+    -0.000547310931256588,
+    0.10459327903617144,
+    0.9945151770493675,
+    -0.0003713680242604586,
+    0.0005831515567283549,
+    0.0003120860887661711,
+    0.9999997812682763,
+    -0.0001612594787729904,
+    0.0008494788780808449,
+    -0.00044581780093722045
+  ],
+  "learned_bound_margin_fraction": 0.05,
+  "model_affine_enabled": true,
+  "model_artifact": "results/offline/sitl_baseline_v1/20260402T013459Z_sitl_id_v7_hovercentered_affine_rotated/edmd_unquantized.npz",
+  "model_residual_enabled": true,
+  "moment_authority_anchor": {
+    "active_thresholds_nm": [
+      0.05,
+      0.05,
+      0.03
+    ],
+    "enabled": true,
+    "minimum_baseline_fraction": 0.3
+  },
+  "quantization_mode": "none",
+  "reference_duration_s": 10.0,
+  "reference_mode": "takeoff_hold",
+  "reference_sample_count": 10000,
+  "reference_seed": 2141444,
+  "state_coordinates": {
+    "artifact_state_trim": [
+      0.0029066824354231358,
+      -0.01793980474273364,
+      0.7396420836448669,
+      0.0,
+      0.0,
+      0.0,
+      0.9946071754312388,
+      -0.10371135689206379,
+      0.0003320963398231889,
+      0.10371113832108374,
+      0.9946071231824738,
+      0.00018871318226264226,
+      -0.00035023668474569593,
+      -0.0001530444388091615,
+      0.9999997329733686,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "residual_enabled": true,
+    "runtime_state_trim": [
+      -0.003816936630755663,
+      0.04004482552409172,
+      0.6820145100355148,
+      0.0,
+      0.0,
+      0.0,
+      0.9945150754161579,
+      -0.10459347272214847,
+      -0.000547310931256588,
+      0.10459327903617144,
+      0.9945151770493675,
+      -0.0003713680242604586,
+      0.0005831515567283549,
+      0.0003120860887661711,
+      0.9999997812682763,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "state_coordinates": "takeoff_hold_hover_local_rotated",
+    "state_trim_mode": "per_run_takeoff_hold_final"
+  },
+  "vehicle_scaling": {
+    "max_body_torque_x_nm": 1.0,
+    "max_body_torque_y_nm": 1.0,
+    "max_body_torque_z_nm": 0.6,
+    "max_collective_thrust_newton": 62.0
+  }
+}
