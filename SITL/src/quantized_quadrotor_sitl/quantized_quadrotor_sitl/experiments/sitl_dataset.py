@@ -26,6 +26,8 @@ class SITLRunDataset:
     log_path: Path
     state_history: np.ndarray
     control_history: np.ndarray
+    control_raw_history: np.ndarray
+    control_used_history: np.ndarray
     reference_history: np.ndarray
     experiment_time_s: np.ndarray
     tick_dt_ms: np.ndarray
@@ -66,6 +68,14 @@ def load_sitl_run_dataset(
     control_prefix = f"control_{control_source}"
     state_history = _column_history(rows, state_prefix, 18)
     control_history = _column_history(rows, control_prefix, 4)
+    if all(f"control_raw_{idx}" in rows[0] for idx in range(4)):
+        control_raw_history = _column_history(rows, "control_raw", 4)
+    else:
+        control_raw_history = control_history.copy()
+    if all(f"control_used_{idx}" in rows[0] for idx in range(4)):
+        control_used_history = _column_history(rows, "control_used", 4)
+    else:
+        control_used_history = control_history.copy()
     reference_history = _column_history(rows, "reference", 18)
     experiment_time_s = np.asarray([float(row["experiment_time_s"]) for row in rows], dtype=float)
     tick_dt_ms = np.asarray([float(row["tick_dt_ms"]) for row in rows], dtype=float)
@@ -83,6 +93,8 @@ def load_sitl_run_dataset(
         log_path=resolved_path,
         state_history=state_history,
         control_history=control_history,
+        control_raw_history=control_raw_history,
+        control_used_history=control_used_history,
         reference_history=reference_history,
         experiment_time_s=experiment_time_s,
         tick_dt_ms=tick_dt_ms,
@@ -118,6 +130,8 @@ def transform_sitl_run_dataset_to_hover_local_residual(
             rotate_translation=rotate_translation_enabled,
         ),
         control_history=run.control_history.copy(),
+        control_raw_history=run.control_raw_history.copy(),
+        control_used_history=run.control_used_history.copy(),
         reference_history=state18_history_to_hover_local_residual(
             run.reference_history,
             trim,

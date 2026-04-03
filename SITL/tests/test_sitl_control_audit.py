@@ -11,6 +11,7 @@ from quantized_quadrotor_sitl.core.types import EDMDModel
 from quantized_quadrotor_sitl.experiments.sitl_control_audit import (
     analyze_runtime_control_audit,
     replay_baseline_control_history,
+    select_anchor_mapping_status,
     select_control_audit_mapping_status,
 )
 from quantized_quadrotor_sitl.experiments.sitl_dataset import load_sitl_run_dataset
@@ -33,6 +34,8 @@ def _write_runtime_log(
     states: list[list[float]],
     references: list[list[float]],
     controls: list[list[float]],
+    raw_controls: list[list[float]] | None = None,
+    used_controls: list[list[float]] | None = None,
     control_internal: list[list[float]] | None = None,
 ) -> None:
     header = [
@@ -54,6 +57,8 @@ def _write_runtime_log(
     ]
     rows = []
     for step, (state, reference, control) in enumerate(zip(states, references, controls, strict=True)):
+        raw_control = control if raw_controls is None else raw_controls[step]
+        used_control = control if used_controls is None else used_controls[step]
         internal = control if control_internal is None else control_internal[step]
         row = {
             "step": step,
@@ -62,18 +67,18 @@ def _write_runtime_log(
             "reference_index": step,
             "tick_dt_ms": 20.0,
             "solver_ms": 5.0,
-            "px4_collective_command_newton": control[0],
-            "px4_collective_normalized": control[0] / 62.0,
-            "px4_thrust_body_z": -(control[0] / 62.0),
+            "px4_collective_command_newton": used_control[0],
+            "px4_collective_normalized": used_control[0] / 62.0,
+            "px4_thrust_body_z": -(used_control[0] / 62.0),
         }
         for idx in range(18):
             row[f"state_raw_{idx}"] = state[idx]
             row[f"state_used_{idx}"] = state[idx]
             row[f"reference_{idx}"] = reference[idx]
         for idx in range(4):
-            row[f"control_raw_{idx}"] = control[idx]
+            row[f"control_raw_{idx}"] = raw_control[idx]
             row[f"control_internal_{idx}"] = internal[idx]
-            row[f"control_used_{idx}"] = control[idx]
+            row[f"control_used_{idx}"] = used_control[idx]
         rows.append(row)
 
     with path.open("w", encoding="utf-8", newline="") as stream:
@@ -186,6 +191,7 @@ def test_control_audit_ignores_near_zero_baseline_axes(tmp_path: Path):
 
     assert summary["active_sample_count_by_axis"] == {"u1": 0, "u2": 0, "u3": 0}
     assert summary["mapping_status"] == "model/runtime issue"
+    assert summary["anchor_mapping_status"] == "learned-controller/runtime issue"
     assert (run_dir / "control_audit_summary.json").exists()
     assert (run_dir / "control_audit_trace.csv").exists()
 
@@ -209,6 +215,64 @@ def test_control_audit_classifies_forced_sign_flip_as_mapping_bug(tmp_path: Path
     assert select_control_audit_mapping_status(summary) == "mapping/sign bug"
     assert summary["pre_divergence_sign_match_fraction_by_axis"]["u1"] == pytest.approx(0.0)
     assert summary["pre_divergence_sign_match_fraction_by_axis"]["u2"] == pytest.approx(0.0)
+
+
+def test_control_audit_classifies_anchor_induced_sign_issue_from_raw_vs_used_split(tmp_path: Path):
+    run_dir = tmp_path / "4-1-26_anchor_flip"
+    run_dir.mkdir()
+    log_path = run_dir / "runtime_log.csv"
+    artifact_path = tmp_path / "results" / "offline" / "test" / "edmd_unquantized.npz"
+    artifact_path.parent.mkdir(parents=True)
+    _write_artifact(artifact_path)
+    _write_run_metadata(run_dir / "run_metadata.json")
+    states = [_identity_state18(0.0, 0.0, 0.75)] * 5
+    references = [_identity_state18(1.0, 1.0, 0.75)] * 5
+    raw_controls = [[43.0, -0.20, 0.20, 0.05]] * 5
+    used_controls = [[43.0, -0.20, -0.20, 0.05]] * 5
+    _write_runtime_log(
+        log_path,
+        states=states,
+        references=references,
+        controls=used_controls,
+        raw_controls=raw_controls,
+        used_controls=used_controls,
+    )
+
+    summary = analyze_runtime_control_audit(log_path, artifact_path)
+
+    assert summary["raw_pre_divergence_sign_match_fraction_by_axis"]["u2"] == pytest.approx(1.0)
+    assert summary["used_pre_divergence_sign_match_fraction_by_axis"]["u2"] == pytest.approx(0.0)
+    assert summary["anchor_mapping_status"] == "anchor-induced sign issue"
+    assert select_anchor_mapping_status(summary) == "anchor-induced sign issue"
+
+
+def test_control_audit_classifies_raw_sign_bug_as_learned_controller_issue(tmp_path: Path):
+    run_dir = tmp_path / "4-1-26_raw_bug"
+    run_dir.mkdir()
+    log_path = run_dir / "runtime_log.csv"
+    artifact_path = tmp_path / "results" / "offline" / "test" / "edmd_unquantized.npz"
+    artifact_path.parent.mkdir(parents=True)
+    _write_artifact(artifact_path)
+    _write_run_metadata(run_dir / "run_metadata.json")
+    states = [_identity_state18(0.0, 0.0, 0.75)] * 5
+    references = [_identity_state18(1.0, 1.0, 0.75)] * 5
+    raw_controls = [[43.0, -0.20, -0.20, 0.05]] * 5
+    used_controls = [[43.0, -0.20, -0.20, 0.05]] * 5
+    _write_runtime_log(
+        log_path,
+        states=states,
+        references=references,
+        controls=used_controls,
+        raw_controls=raw_controls,
+        used_controls=used_controls,
+    )
+
+    summary = analyze_runtime_control_audit(log_path, artifact_path)
+
+    assert summary["raw_pre_divergence_sign_match_fraction_by_axis"]["u2"] == pytest.approx(0.0)
+    assert summary["used_pre_divergence_sign_match_fraction_by_axis"]["u2"] == pytest.approx(0.0)
+    assert summary["anchor_mapping_status"] == "learned-controller/runtime issue"
+    assert select_anchor_mapping_status(summary) == "learned-controller/runtime issue"
 
 
 def test_vehicle_odometry_to_state18_preserves_expected_enu_flu_conventions():
@@ -246,7 +310,7 @@ def test_physical_control_to_px4_wrench_flips_body_yz_signs_for_px4():
     assert collective_normalized == pytest.approx(0.5)
 
 
-def test_load_sitl_run_dataset_preserves_control_column_order_with_internal_history(tmp_path: Path):
+def test_load_sitl_run_dataset_preserves_control_column_order_with_all_histories(tmp_path: Path):
     run_dir = tmp_path / "4-1-26_order"
     run_dir.mkdir()
     log_path = run_dir / "runtime_log.csv"
@@ -256,10 +320,14 @@ def test_load_sitl_run_dataset_preserves_control_column_order_with_internal_hist
         states=[_identity_state18(0.0, 0.0, 0.75)] * 3,
         references=[_identity_state18(0.0, 0.0, 0.75)] * 3,
         controls=[[43.0, 0.11, -0.22, 0.33], [44.0, 0.12, -0.23, 0.34], [45.0, 0.13, -0.24, 0.35]],
+        raw_controls=[[42.5, 0.10, -0.20, 0.30], [43.5, 0.11, -0.21, 0.31], [44.5, 0.12, -0.22, 0.32]],
+        used_controls=[[43.0, 0.11, -0.22, 0.33], [44.0, 0.12, -0.23, 0.34], [45.0, 0.13, -0.24, 0.35]],
         control_internal=[[1.0, 2.0, 3.0, 4.0], [1.1, 2.1, 3.1, 4.1], [1.2, 2.2, 3.2, 4.2]],
     )
 
     dataset = load_sitl_run_dataset(log_path, state_source="used", control_source="used")
 
     assert np.allclose(dataset.control_history[:, 0], np.array([43.0, 0.11, -0.22, 0.33], dtype=float))
+    assert np.allclose(dataset.control_raw_history[:, 0], np.array([42.5, 0.10, -0.20, 0.30], dtype=float))
+    assert np.allclose(dataset.control_used_history[:, 0], np.array([43.0, 0.11, -0.22, 0.33], dtype=float))
     assert np.allclose(dataset.control_internal_history[:, 0], np.array([1.0, 2.0, 3.0, 4.0], dtype=float))

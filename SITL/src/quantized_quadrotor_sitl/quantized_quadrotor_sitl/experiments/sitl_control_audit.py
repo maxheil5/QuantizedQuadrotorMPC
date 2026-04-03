@@ -24,6 +24,9 @@ ACTIVE_AXIS_THRESHOLDS = {
 }
 SIGN_MATCH_MIN_FRACTION = 0.80
 NEAR_BOUND_MARGIN_FRACTION = 0.05
+ANCHOR_DECISION_AXIS = "u2"
+ANCHOR_INDUCED_RAW_MIN = 0.90
+ANCHOR_INDUCED_USED_MAX = 0.80
 
 
 def _baseline_config_from_run(run: SITLRunDataset) -> BaselineControllerConfig:
@@ -139,16 +142,25 @@ def _first_time(mask: np.ndarray, experiment_time_s: np.ndarray) -> float | None
     return float(experiment_time_s[int(indices[0])])
 
 
+def _dominant_mismatch_axis_from_fields(
+    pre_div_match: dict[str, float],
+    pre_div_overlap: dict[str, float],
+    overlap_sample_count: dict[str, int],
+) -> str:
+    overlap_axes = [axis for axis, value in overlap_sample_count.items() if int(value) > 0]
+    if overlap_axes:
+        return min(overlap_axes, key=lambda axis: (float(pre_div_match[axis]), axis))
+    return min(("u1", "u2", "u3"), key=lambda axis: (float(pre_div_overlap[axis]), axis))
+
+
 def _dominant_mismatch_axis(summary: dict[str, object]) -> str:
     pre_div_match = summary["pre_divergence_sign_match_fraction_by_axis"]
     assert isinstance(pre_div_match, dict)
     pre_div_overlap = summary["pre_divergence_active_overlap_fraction_by_axis"]
     assert isinstance(pre_div_overlap, dict)
-
-    overlap_axes = [axis for axis, value in summary["pre_divergence_overlap_sample_count_by_axis"].items() if int(value) > 0]
-    if overlap_axes:
-        return min(overlap_axes, key=lambda axis: (float(pre_div_match[axis]), axis))
-    return min(("u1", "u2", "u3"), key=lambda axis: (float(pre_div_overlap[axis]), axis))
+    overlap_counts = summary["pre_divergence_overlap_sample_count_by_axis"]
+    assert isinstance(overlap_counts, dict)
+    return _dominant_mismatch_axis_from_fields(pre_div_match, pre_div_overlap, overlap_counts)
 
 
 def select_control_audit_mapping_status(summary: dict[str, object]) -> str:
@@ -162,6 +174,103 @@ def select_control_audit_mapping_status(summary: dict[str, object]) -> str:
         if float(pre_div_match[axis]) < SIGN_MATCH_MIN_FRACTION:
             return "mapping/sign bug"
     return "model/runtime issue"
+
+
+def select_anchor_mapping_status(summary: dict[str, object]) -> str:
+    raw_match = summary["raw_pre_divergence_sign_match_fraction_by_axis"]
+    assert isinstance(raw_match, dict)
+    used_match = summary["used_pre_divergence_sign_match_fraction_by_axis"]
+    assert isinstance(used_match, dict)
+    if (
+        float(raw_match[ANCHOR_DECISION_AXIS]) >= ANCHOR_INDUCED_RAW_MIN
+        and float(used_match[ANCHOR_DECISION_AXIS]) < ANCHOR_INDUCED_USED_MAX
+    ):
+        return "anchor-induced sign issue"
+    return "learned-controller/runtime issue"
+
+
+def _sign_analysis_for_history(
+    baseline_control_history: np.ndarray,
+    learned_control_history: np.ndarray,
+    experiment_time_s: np.ndarray,
+    pre_divergence_mask: np.ndarray,
+) -> dict[str, dict[str, float | int | None]]:
+    active_sign_match_fraction_by_axis: dict[str, float] = {}
+    pre_divergence_sign_match_fraction_by_axis: dict[str, float] = {}
+    active_overlap_fraction_by_axis: dict[str, float] = {}
+    pre_divergence_active_overlap_fraction_by_axis: dict[str, float] = {}
+    active_sample_count_by_axis: dict[str, int] = {}
+    overlap_sample_count_by_axis: dict[str, int] = {}
+    pre_divergence_active_sample_count_by_axis: dict[str, int] = {}
+    pre_divergence_overlap_sample_count_by_axis: dict[str, int] = {}
+    first_sign_mismatch_time_s_by_axis: dict[str, float | None] = {}
+    mean_magnitude_ratio_by_axis: dict[str, float] = {}
+    pre_divergence_mean_magnitude_ratio_by_axis: dict[str, float] = {}
+    active_masks: dict[str, np.ndarray] = {}
+    learned_active_masks: dict[str, np.ndarray] = {}
+    overlap_masks: dict[str, np.ndarray] = {}
+    sign_match_masks: dict[str, np.ndarray] = {}
+    magnitude_ratio_by_axis: dict[str, np.ndarray] = {}
+
+    for axis_idx in range(1, 4):
+        axis_name = f"u{axis_idx}"
+        threshold = ACTIVE_AXIS_THRESHOLDS[axis_name]
+        baseline_axis = baseline_control_history[axis_idx, :]
+        learned_axis = learned_control_history[axis_idx, :]
+        active_masks[axis_name] = np.abs(baseline_axis) >= threshold
+        learned_active_masks[axis_name] = np.abs(learned_axis) >= threshold
+        overlap_masks[axis_name] = np.logical_and(active_masks[axis_name], learned_active_masks[axis_name])
+        sign_match_masks[axis_name] = np.logical_and(
+            overlap_masks[axis_name],
+            np.sign(learned_axis) == np.sign(baseline_axis),
+        )
+
+        active_mask = active_masks[axis_name]
+        overlap_mask = overlap_masks[axis_name]
+        match_mask = sign_match_masks[axis_name]
+        active_sample_count_by_axis[axis_name] = int(np.count_nonzero(active_mask))
+        overlap_sample_count_by_axis[axis_name] = int(np.count_nonzero(overlap_mask))
+        pre_active_mask = np.logical_and(active_mask, pre_divergence_mask)
+        pre_overlap_mask = np.logical_and(overlap_mask, pre_divergence_mask)
+        pre_divergence_active_sample_count_by_axis[axis_name] = int(np.count_nonzero(pre_active_mask))
+        pre_divergence_overlap_sample_count_by_axis[axis_name] = int(np.count_nonzero(pre_overlap_mask))
+
+        active_overlap_fraction_by_axis[axis_name] = _fraction_or_one(active_mask, overlap_mask)
+        pre_divergence_active_overlap_fraction_by_axis[axis_name] = _fraction_or_one(pre_active_mask, pre_overlap_mask)
+        active_sign_match_fraction_by_axis[axis_name] = _fraction_or_one(overlap_mask, match_mask)
+        pre_divergence_sign_match_fraction_by_axis[axis_name] = _fraction_or_one(pre_overlap_mask, match_mask)
+
+        magnitude_ratio = np.divide(
+            np.abs(learned_axis),
+            np.maximum(np.abs(baseline_axis), 1.0e-12),
+        )
+        magnitude_ratio_by_axis[axis_name] = magnitude_ratio
+        mean_magnitude_ratio_by_axis[axis_name] = float(np.mean(magnitude_ratio[active_mask])) if np.any(active_mask) else 0.0
+        pre_divergence_mean_magnitude_ratio_by_axis[axis_name] = (
+            float(np.mean(magnitude_ratio[pre_active_mask])) if np.any(pre_active_mask) else 0.0
+        )
+
+        mismatch_mask = np.logical_and(overlap_mask, np.logical_not(match_mask))
+        first_sign_mismatch_time_s_by_axis[axis_name] = _first_time(mismatch_mask, experiment_time_s)
+
+    return {
+        "active_sign_match_fraction_by_axis": active_sign_match_fraction_by_axis,
+        "pre_divergence_sign_match_fraction_by_axis": pre_divergence_sign_match_fraction_by_axis,
+        "active_overlap_fraction_by_axis": active_overlap_fraction_by_axis,
+        "pre_divergence_active_overlap_fraction_by_axis": pre_divergence_active_overlap_fraction_by_axis,
+        "active_sample_count_by_axis": active_sample_count_by_axis,
+        "overlap_sample_count_by_axis": overlap_sample_count_by_axis,
+        "pre_divergence_active_sample_count_by_axis": pre_divergence_active_sample_count_by_axis,
+        "pre_divergence_overlap_sample_count_by_axis": pre_divergence_overlap_sample_count_by_axis,
+        "first_sign_mismatch_time_s_by_axis": first_sign_mismatch_time_s_by_axis,
+        "mean_magnitude_ratio_by_axis": mean_magnitude_ratio_by_axis,
+        "pre_divergence_mean_magnitude_ratio_by_axis": pre_divergence_mean_magnitude_ratio_by_axis,
+        "active_masks": active_masks,
+        "learned_active_masks": learned_active_masks,
+        "overlap_masks": overlap_masks,
+        "sign_match_masks": sign_match_masks,
+        "magnitude_ratio_by_axis": magnitude_ratio_by_axis,
+    }
 
 
 def analyze_runtime_control_audit(
@@ -196,25 +305,36 @@ def analyze_runtime_control_audit(
         coordinates.internal_upper_bounds,
     )
 
-    active_masks: dict[str, np.ndarray] = {}
-    learned_active_masks: dict[str, np.ndarray] = {}
-    overlap_masks: dict[str, np.ndarray] = {}
-    sign_match_masks: dict[str, np.ndarray] = {}
     pre_divergence_mask = np.asarray(run.experiment_time_s, dtype=float) <= divergence_time_s
+    raw_analysis = _sign_analysis_for_history(
+        baseline_control_history,
+        run.control_raw_history,
+        run.experiment_time_s,
+        pre_divergence_mask,
+    )
+    used_analysis = _sign_analysis_for_history(
+        baseline_control_history,
+        run.control_used_history,
+        run.experiment_time_s,
+        pre_divergence_mask,
+    )
+    anchor_delta_history = run.control_used_history - run.control_raw_history
+    anchor_intervention_masks: dict[str, np.ndarray] = {}
+    anchor_sign_flip_masks: dict[str, np.ndarray] = {}
     trace_rows: list[dict[str, object]] = []
 
     for axis_idx in range(1, 4):
         axis_name = f"u{axis_idx}"
-        threshold = ACTIVE_AXIS_THRESHOLDS[axis_name]
-        baseline_axis = baseline_control_history[axis_idx, :]
-        learned_axis = run.control_history[axis_idx, :]
-        active_masks[axis_name] = np.abs(baseline_axis) >= threshold
-        learned_active_masks[axis_name] = np.abs(learned_axis) >= threshold
-        overlap_masks[axis_name] = np.logical_and(active_masks[axis_name], learned_active_masks[axis_name])
-        sign_match_masks[axis_name] = np.logical_and(
-            overlap_masks[axis_name],
-            np.sign(learned_axis) == np.sign(baseline_axis),
+        raw_axis = run.control_raw_history[axis_idx, :]
+        used_axis = run.control_used_history[axis_idx, :]
+        intervention_mask = np.logical_not(np.isclose(raw_axis, used_axis, atol=1.0e-12, rtol=1.0e-9))
+        sign_flip_mask = np.logical_and(
+            intervention_mask,
+            np.logical_and(np.sign(raw_axis) != 0.0, np.sign(used_axis) != 0.0),
         )
+        sign_flip_mask = np.logical_and(sign_flip_mask, np.sign(raw_axis) != np.sign(used_axis))
+        anchor_intervention_masks[axis_name] = intervention_mask
+        anchor_sign_flip_masks[axis_name] = sign_flip_mask
 
     for idx in range(run.sample_count):
         row: dict[str, object] = {
@@ -234,70 +354,52 @@ def analyze_runtime_control_audit(
             axis_name = f"u{axis_idx}"
             threshold = ACTIVE_AXIS_THRESHOLDS[axis_name]
             baseline_value = float(baseline_control_history[axis_idx, idx])
-            learned_value = float(run.control_history[axis_idx, idx])
-            baseline_active = bool(active_masks[axis_name][idx])
-            learned_active = bool(learned_active_masks[axis_name][idx])
-            overlap_active = bool(overlap_masks[axis_name][idx])
-            sign_match = bool(sign_match_masks[axis_name][idx]) if overlap_active else None
-            magnitude_ratio = None
+            raw_value = float(run.control_raw_history[axis_idx, idx])
+            used_value = float(run.control_used_history[axis_idx, idx])
+            baseline_active = bool(raw_analysis["active_masks"][axis_name][idx])
+            raw_active = bool(raw_analysis["learned_active_masks"][axis_name][idx])
+            used_active = bool(used_analysis["learned_active_masks"][axis_name][idx])
+            raw_overlap_active = bool(raw_analysis["overlap_masks"][axis_name][idx])
+            used_overlap_active = bool(used_analysis["overlap_masks"][axis_name][idx])
+            raw_sign_match = bool(raw_analysis["sign_match_masks"][axis_name][idx]) if raw_overlap_active else None
+            used_sign_match = bool(used_analysis["sign_match_masks"][axis_name][idx]) if used_overlap_active else None
+            raw_magnitude_ratio = None
+            used_magnitude_ratio = None
             if baseline_active:
-                magnitude_ratio = float(abs(learned_value) / max(abs(baseline_value), 1.0e-12))
+                raw_magnitude_ratio = float(abs(raw_value) / max(abs(baseline_value), 1.0e-12))
+                used_magnitude_ratio = float(abs(used_value) / max(abs(baseline_value), 1.0e-12))
             row[f"{axis_name}_active_threshold_nm"] = threshold
             row[f"{axis_name}_baseline_active"] = baseline_active
-            row[f"{axis_name}_learned_active"] = learned_active
-            row[f"{axis_name}_overlap_active"] = overlap_active
-            row[f"{axis_name}_sign_match"] = sign_match
-            row[f"{axis_name}_magnitude_ratio"] = magnitude_ratio
+            row[f"{axis_name}_raw_active"] = raw_active
+            row[f"{axis_name}_used_active"] = used_active
+            row[f"{axis_name}_raw_overlap_active"] = raw_overlap_active
+            row[f"{axis_name}_used_overlap_active"] = used_overlap_active
+            row[f"{axis_name}_raw_sign_match"] = raw_sign_match
+            row[f"{axis_name}_used_sign_match"] = used_sign_match
+            row[f"{axis_name}_raw_magnitude_ratio"] = raw_magnitude_ratio
+            row[f"{axis_name}_used_magnitude_ratio"] = used_magnitude_ratio
+            row[f"{axis_name}_anchor_applied"] = bool(anchor_intervention_masks[axis_name][idx])
+            row[f"{axis_name}_anchor_delta"] = float(anchor_delta_history[axis_idx, idx])
+            row[f"{axis_name}_anchor_sign_flip"] = bool(anchor_sign_flip_masks[axis_name][idx])
         trace_rows.append(row)
 
-    active_sign_match_fraction_by_axis: dict[str, float] = {}
-    pre_divergence_sign_match_fraction_by_axis: dict[str, float] = {}
-    active_overlap_fraction_by_axis: dict[str, float] = {}
-    pre_divergence_active_overlap_fraction_by_axis: dict[str, float] = {}
-    active_sample_count_by_axis: dict[str, int] = {}
-    overlap_sample_count_by_axis: dict[str, int] = {}
-    pre_divergence_active_sample_count_by_axis: dict[str, int] = {}
-    pre_divergence_overlap_sample_count_by_axis: dict[str, int] = {}
-    first_sign_mismatch_time_s_by_axis: dict[str, float | None] = {}
     first_bound_hit_time_s_by_axis: dict[str, float | None] = {}
-    mean_magnitude_ratio_by_axis: dict[str, float] = {}
-    pre_divergence_mean_magnitude_ratio_by_axis: dict[str, float] = {}
+    anchor_intervention_fraction_by_axis: dict[str, float] = {}
+    first_anchor_intervention_time_s_by_axis: dict[str, float | None] = {}
+    anchor_sign_flip_count_by_axis: dict[str, int] = {}
 
-    for axis_idx in range(1, 4):
-        axis_name = f"u{axis_idx}"
-        active_mask = active_masks[axis_name]
-        overlap_mask = overlap_masks[axis_name]
-        match_mask = sign_match_masks[axis_name]
-        active_sample_count_by_axis[axis_name] = int(np.count_nonzero(active_mask))
-        overlap_sample_count_by_axis[axis_name] = int(np.count_nonzero(overlap_mask))
-        pre_active_mask = np.logical_and(active_mask, pre_divergence_mask)
-        pre_overlap_mask = np.logical_and(overlap_mask, pre_divergence_mask)
-        pre_divergence_active_sample_count_by_axis[axis_name] = int(np.count_nonzero(pre_active_mask))
-        pre_divergence_overlap_sample_count_by_axis[axis_name] = int(np.count_nonzero(pre_overlap_mask))
-
-        active_overlap_fraction_by_axis[axis_name] = _fraction_or_one(active_mask, overlap_mask)
-        pre_divergence_active_overlap_fraction_by_axis[axis_name] = _fraction_or_one(pre_active_mask, pre_overlap_mask)
-        active_sign_match_fraction_by_axis[axis_name] = _fraction_or_one(overlap_mask, match_mask)
-        pre_divergence_sign_match_fraction_by_axis[axis_name] = _fraction_or_one(pre_overlap_mask, match_mask)
-
-        baseline_axis = baseline_control_history[axis_idx, :]
-        learned_axis = run.control_history[axis_idx, :]
-        magnitude_ratio = np.divide(
-            np.abs(learned_axis),
-            np.maximum(np.abs(baseline_axis), 1.0e-12),
-        )
-        mean_magnitude_ratio_by_axis[axis_name] = float(np.mean(magnitude_ratio[active_mask])) if np.any(active_mask) else 0.0
-        pre_divergence_mean_magnitude_ratio_by_axis[axis_name] = (
-            float(np.mean(magnitude_ratio[pre_active_mask])) if np.any(pre_active_mask) else 0.0
-        )
-
-        mismatch_mask = np.logical_and(overlap_mask, np.logical_not(match_mask))
-        first_sign_mismatch_time_s_by_axis[axis_name] = _first_time(mismatch_mask, run.experiment_time_s)
+    for axis_name in ("u1", "u2", "u3"):
+        anchor_intervention_fraction_by_axis[axis_name] = float(np.mean(anchor_intervention_masks[axis_name]))
+        first_anchor_intervention_time_s_by_axis[axis_name] = _first_time(anchor_intervention_masks[axis_name], run.experiment_time_s)
+        anchor_sign_flip_count_by_axis[axis_name] = int(np.count_nonzero(np.logical_and(anchor_sign_flip_masks[axis_name], pre_divergence_mask)))
 
     for axis_idx in range(4):
         axis_name = f"u{axis_idx}"
         first_bound_hit_time_s_by_axis[axis_name] = _first_time(near_bound[axis_idx, :], run.experiment_time_s)
 
+    used_pre_divergence_sign_match_fraction_by_axis = used_analysis["pre_divergence_sign_match_fraction_by_axis"]
+    used_pre_divergence_active_overlap_fraction_by_axis = used_analysis["pre_divergence_active_overlap_fraction_by_axis"]
+    used_pre_divergence_overlap_sample_count_by_axis = used_analysis["pre_divergence_overlap_sample_count_by_axis"]
     summary: dict[str, object] = {
         "artifact_path": str(artifact_path),
         "log_path": str(log_path),
@@ -306,21 +408,45 @@ def analyze_runtime_control_audit(
         "cost_state_mode": str(run.run_metadata.get("cost_state_mode", "decoded24_raw")),
         "divergence_time_s": divergence_time_s,
         "active_axis_thresholds_nm": dict(ACTIVE_AXIS_THRESHOLDS),
-        "active_sample_count_by_axis": active_sample_count_by_axis,
-        "overlap_sample_count_by_axis": overlap_sample_count_by_axis,
-        "pre_divergence_active_sample_count_by_axis": pre_divergence_active_sample_count_by_axis,
-        "pre_divergence_overlap_sample_count_by_axis": pre_divergence_overlap_sample_count_by_axis,
-        "active_overlap_fraction_by_axis": active_overlap_fraction_by_axis,
-        "pre_divergence_active_overlap_fraction_by_axis": pre_divergence_active_overlap_fraction_by_axis,
-        "active_sign_match_fraction_by_axis": active_sign_match_fraction_by_axis,
-        "pre_divergence_sign_match_fraction_by_axis": pre_divergence_sign_match_fraction_by_axis,
-        "mean_magnitude_ratio_by_axis": mean_magnitude_ratio_by_axis,
-        "pre_divergence_mean_magnitude_ratio_by_axis": pre_divergence_mean_magnitude_ratio_by_axis,
-        "first_sign_mismatch_time_s_by_axis": first_sign_mismatch_time_s_by_axis,
+        "active_sample_count_by_axis": used_analysis["active_sample_count_by_axis"],
+        "overlap_sample_count_by_axis": used_analysis["overlap_sample_count_by_axis"],
+        "pre_divergence_active_sample_count_by_axis": used_analysis["pre_divergence_active_sample_count_by_axis"],
+        "pre_divergence_overlap_sample_count_by_axis": used_analysis["pre_divergence_overlap_sample_count_by_axis"],
+        "active_overlap_fraction_by_axis": used_analysis["active_overlap_fraction_by_axis"],
+        "pre_divergence_active_overlap_fraction_by_axis": used_analysis["pre_divergence_active_overlap_fraction_by_axis"],
+        "active_sign_match_fraction_by_axis": used_analysis["active_sign_match_fraction_by_axis"],
+        "pre_divergence_sign_match_fraction_by_axis": used_analysis["pre_divergence_sign_match_fraction_by_axis"],
+        "mean_magnitude_ratio_by_axis": used_analysis["mean_magnitude_ratio_by_axis"],
+        "pre_divergence_mean_magnitude_ratio_by_axis": used_analysis["pre_divergence_mean_magnitude_ratio_by_axis"],
+        "first_sign_mismatch_time_s_by_axis": used_analysis["first_sign_mismatch_time_s_by_axis"],
         "first_bound_hit_time_s_by_axis": first_bound_hit_time_s_by_axis,
+        "raw_active_sign_match_fraction_by_axis": raw_analysis["active_sign_match_fraction_by_axis"],
+        "raw_pre_divergence_sign_match_fraction_by_axis": raw_analysis["pre_divergence_sign_match_fraction_by_axis"],
+        "raw_mean_magnitude_ratio_by_axis": raw_analysis["mean_magnitude_ratio_by_axis"],
+        "raw_pre_divergence_mean_magnitude_ratio_by_axis": raw_analysis["pre_divergence_mean_magnitude_ratio_by_axis"],
+        "raw_first_sign_mismatch_time_s_by_axis": raw_analysis["first_sign_mismatch_time_s_by_axis"],
+        "used_active_sign_match_fraction_by_axis": used_analysis["active_sign_match_fraction_by_axis"],
+        "used_pre_divergence_sign_match_fraction_by_axis": used_analysis["pre_divergence_sign_match_fraction_by_axis"],
+        "used_mean_magnitude_ratio_by_axis": used_analysis["mean_magnitude_ratio_by_axis"],
+        "used_pre_divergence_mean_magnitude_ratio_by_axis": used_analysis["pre_divergence_mean_magnitude_ratio_by_axis"],
+        "used_first_sign_mismatch_time_s_by_axis": used_analysis["first_sign_mismatch_time_s_by_axis"],
+        "anchor_intervention_fraction_by_axis": anchor_intervention_fraction_by_axis,
+        "first_anchor_intervention_time_s_by_axis": first_anchor_intervention_time_s_by_axis,
+        "anchor_sign_flip_count_by_axis": anchor_sign_flip_count_by_axis,
     }
     summary["dominant_mismatch_axis"] = _dominant_mismatch_axis(summary)
     summary["mapping_status"] = select_control_audit_mapping_status(summary)
+    summary["anchor_mapping_status"] = select_anchor_mapping_status(summary)
+    summary["raw_dominant_mismatch_axis"] = _dominant_mismatch_axis_from_fields(
+        raw_analysis["pre_divergence_sign_match_fraction_by_axis"],
+        raw_analysis["pre_divergence_active_overlap_fraction_by_axis"],
+        raw_analysis["pre_divergence_overlap_sample_count_by_axis"],
+    )
+    summary["used_dominant_mismatch_axis"] = _dominant_mismatch_axis_from_fields(
+        used_pre_divergence_sign_match_fraction_by_axis,
+        used_pre_divergence_active_overlap_fraction_by_axis,
+        used_pre_divergence_overlap_sample_count_by_axis,
+    )
 
     trace_path = output_root / "control_audit_trace.csv"
     summary_path = output_root / "control_audit_summary.json"
@@ -351,6 +477,7 @@ def main() -> None:
                 "control_audit_trace_path": str(output_dir / "control_audit_trace.csv"),
                 "cost_state_mode": summary["cost_state_mode"],
                 "mapping_status": summary["mapping_status"],
+                "anchor_mapping_status": summary["anchor_mapping_status"],
                 "dominant_mismatch_axis": summary["dominant_mismatch_axis"],
             },
             indent=2,
