@@ -15,6 +15,16 @@ GCS_HEARTBEAT_HOST="${GCS_HEARTBEAT_HOST:-127.0.0.1}"
 GCS_HEARTBEAT_PORT="${GCS_HEARTBEAT_PORT:-18570}"
 GCS_HEARTBEAT_RATE_HZ="${GCS_HEARTBEAT_RATE_HZ:-1.0}"
 AUTO_DRIFT_ANALYSIS="${AUTO_DRIFT_ANALYSIS:-1}"
+AUTO_GAZEBO_VIDEO_RECORDING="${AUTO_GAZEBO_VIDEO_RECORDING:-1}"
+GAZEBO_VIDEO_DISPLAY="${GAZEBO_VIDEO_DISPLAY:-${DISPLAY:-}}"
+GAZEBO_VIDEO_FPS="${GAZEBO_VIDEO_FPS:-30}"
+GAZEBO_VIDEO_WAIT_SECONDS="${GAZEBO_VIDEO_WAIT_SECONDS:-20}"
+GAZEBO_VIDEO_OUTPUT_NAME="${GAZEBO_VIDEO_OUTPUT_NAME:-gazebo_recording.mp4}"
+GAZEBO_VIDEO_WINDOW_PATTERN="${GAZEBO_VIDEO_WINDOW_PATTERN:-Gazebo|gz sim|Ignition Gazebo}"
+GAZEBO_VIDEO_GEOMETRY="${GAZEBO_VIDEO_GEOMETRY:-}"
+GAZEBO_VIDEO_CODEC="${GAZEBO_VIDEO_CODEC:-libx264}"
+GAZEBO_VIDEO_PRESET="${GAZEBO_VIDEO_PRESET:-veryfast}"
+GAZEBO_VIDEO_CRF="${GAZEBO_VIDEO_CRF:-23}"
 GZ_MODELS_DIR="${ROOT_DIR}/artifacts/generated/gazebo_models"
 GZ_WORLDS_DIR="${ROOT_DIR}/configs/gazebo/worlds"
 PX4_BUNDLED_MODELS_DIR="${PX4_DIR}/Tools/simulation/gz/models"
@@ -71,11 +81,15 @@ AGENT_PID=$!
 
 cleanup() {
   trap - EXIT INT TERM
+  if kill -0 "${VIDEO_RECORDER_PID:-0}" >/dev/null 2>&1; then
+    kill -INT "${VIDEO_RECORDER_PID}" >/dev/null 2>&1 || true
+  fi
   kill "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
   kill "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
   kill "${PX4_PID:-0}" >/dev/null 2>&1 || true
   kill "${GCS_HEARTBEAT_PID:-0}" >/dev/null 2>&1 || true
   kill "${AGENT_PID:-0}" >/dev/null 2>&1 || true
+  wait "${VIDEO_RECORDER_PID:-0}" >/dev/null 2>&1 || true
   wait "${CONTROLLER_PID:-0}" >/dev/null 2>&1 || true
   wait "${TELEMETRY_PID:-0}" >/dev/null 2>&1 || true
   wait "${PX4_PID:-0}" >/dev/null 2>&1 || true
@@ -93,19 +107,8 @@ require_running() {
   fi
 }
 
-maybe_generate_postrun_analyses() {
-  if [[ "${AUTO_DRIFT_ANALYSIS}" != "1" ]]; then
-    return 0
-  fi
-
-  local resolved_results_dir
-  local run_dir
-  local metadata_path
-  local artifact_path
-  local postrun_cmd=()
-
-  if ! resolved_results_dir="$(
-    python - "${CONFIG_PATH}" "${CALLER_WORKDIR}" <<'PY'
+resolve_results_dir_from_config() {
+  python - "${CONFIG_PATH}" "${CALLER_WORKDIR}" <<'PY'
 from pathlib import Path
 import sys
 from quantized_quadrotor_sitl.core.config import load_runtime_config
@@ -119,13 +122,11 @@ if not results_dir.is_absolute():
     results_dir = base_dir / results_dir
 print(results_dir)
 PY
-  )"; then
-    echo "WARNING: automatic post-run analysis failed while resolving results_dir." >&2
-    echo "Config path: ${CONFIG_PATH}" >&2
-    return 1
-  fi
-  if ! run_dir="$(
-    python - "${resolved_results_dir}" <<'PY'
+}
+
+resolve_active_run_dir() {
+  local resolved_results_dir="$1"
+  python - "${resolved_results_dir}" <<'PY'
 from pathlib import Path
 import sys
 
@@ -133,14 +134,11 @@ results_dir = Path(sys.argv[1])
 run_dir = results_dir.resolve(strict=False) if results_dir.name == "latest" else results_dir.resolve(strict=False)
 print(run_dir)
 PY
-  )"; then
-    echo "WARNING: automatic post-run analysis failed while resolving run_dir." >&2
-    echo "Resolved results dir: ${resolved_results_dir}" >&2
-    return 1
-  fi
-  metadata_path="${run_dir}/run_metadata.json"
-  if ! artifact_path="$(
-    python - "${metadata_path}" "${CALLER_WORKDIR}" <<'PY'
+}
+
+resolve_artifact_path_from_metadata() {
+  local metadata_path="$1"
+  python - "${metadata_path}" "${CALLER_WORKDIR}" <<'PY'
 from pathlib import Path
 import json
 import sys
@@ -156,7 +154,165 @@ if not artifact_path.is_absolute():
     artifact_path = base_dir / artifact_path
 print(artifact_path)
 PY
-  )"; then
+}
+
+wait_for_active_run_dir() {
+  local resolved_results_dir="$1"
+  local wait_seconds="$2"
+  local deadline=$((SECONDS + wait_seconds))
+  local run_dir=""
+  while (( SECONDS < deadline )); do
+    if run_dir="$(resolve_active_run_dir "${resolved_results_dir}" 2>/dev/null)" && [[ -f "${run_dir}/run_metadata.json" ]]; then
+      echo "${run_dir}"
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
+
+resolve_full_display_geometry() {
+  local display="$1"
+  local dims=""
+  if command -v xdpyinfo >/dev/null 2>&1; then
+    dims="$(DISPLAY="${display}" xdpyinfo 2>/dev/null | awk '/dimensions:/ {print $2; exit}')"
+  elif command -v xrandr >/dev/null 2>&1; then
+    dims="$(DISPLAY="${display}" xrandr 2>/dev/null | awk '/\*/ {print $1; exit}')"
+  fi
+  if [[ "${dims}" =~ ^([0-9]+)x([0-9]+)$ ]]; then
+    echo "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} 0 0"
+    return 0
+  fi
+  return 1
+}
+
+resolve_window_geometry() {
+  local display="$1"
+  local pattern="$2"
+  local window_id info width height x y
+  if ! command -v xdotool >/dev/null 2>&1 || ! command -v xwininfo >/dev/null 2>&1; then
+    return 1
+  fi
+  window_id="$(DISPLAY="${display}" xdotool search --name "${pattern}" 2>/dev/null | head -n1 || true)"
+  if [[ -z "${window_id}" ]]; then
+    return 1
+  fi
+  info="$(DISPLAY="${display}" xwininfo -id "${window_id}" 2>/dev/null || true)"
+  if [[ -z "${info}" ]]; then
+    return 1
+  fi
+  width="$(awk -F: '/Width:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
+  height="$(awk -F: '/Height:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
+  x="$(awk -F: '/Absolute upper-left X:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
+  y="$(awk -F: '/Absolute upper-left Y:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
+  if [[ "${width}" =~ ^[0-9]+$ && "${height}" =~ ^[0-9]+$ && "${x}" =~ ^-?[0-9]+$ && "${y}" =~ ^-?[0-9]+$ ]]; then
+    echo "${width} ${height} ${x} ${y}"
+    return 0
+  fi
+  return 1
+}
+
+resolve_capture_geometry() {
+  local display="$1"
+  local geometry="${GAZEBO_VIDEO_GEOMETRY}"
+  if [[ -n "${geometry}" ]]; then
+    if [[ "${geometry}" =~ ^([0-9]+)x([0-9]+)\+(-?[0-9]+),(-?[0-9]+)$ ]]; then
+      echo "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]} ${BASH_REMATCH[4]}"
+      return 0
+    fi
+    echo "WARNING: invalid GAZEBO_VIDEO_GEOMETRY='${geometry}', expected WIDTHxHEIGHT+X,Y" >&2
+  fi
+  resolve_window_geometry "${display}" "${GAZEBO_VIDEO_WINDOW_PATTERN}" && return 0
+  resolve_full_display_geometry "${display}"
+}
+
+maybe_start_gazebo_video_recording() {
+  if [[ "${AUTO_GAZEBO_VIDEO_RECORDING}" != "1" ]]; then
+    return 0
+  fi
+  if [[ "${HEADLESS}" == "1" ]]; then
+    echo "Skipping Gazebo video recording because HEADLESS=1." >&2
+    return 0
+  fi
+  if [[ -z "${GAZEBO_VIDEO_DISPLAY}" ]]; then
+    echo "Skipping Gazebo video recording because DISPLAY is not set." >&2
+    return 0
+  fi
+  if ! command -v ffmpeg >/dev/null 2>&1; then
+    echo "Skipping Gazebo video recording because ffmpeg is not installed." >&2
+    return 0
+  fi
+
+  local resolved_results_dir run_dir output_path geometry width height x y deadline
+  if ! resolved_results_dir="$(resolve_results_dir_from_config)"; then
+    echo "WARNING: failed to resolve results directory for Gazebo video recording." >&2
+    return 0
+  fi
+  if ! run_dir="$(wait_for_active_run_dir "${resolved_results_dir}" "${GAZEBO_VIDEO_WAIT_SECONDS}")"; then
+    echo "WARNING: failed to resolve active run directory for Gazebo video recording." >&2
+    return 0
+  fi
+  output_path="${GAZEBO_VIDEO_OUTPUT_PATH:-${run_dir}/${GAZEBO_VIDEO_OUTPUT_NAME}}"
+  mkdir -p "$(dirname "${output_path}")"
+
+  deadline=$((SECONDS + GAZEBO_VIDEO_WAIT_SECONDS))
+  while (( SECONDS < deadline )); do
+    if geometry="$(resolve_capture_geometry "${GAZEBO_VIDEO_DISPLAY}")"; then
+      read -r width height x y <<<"${geometry}"
+      break
+    fi
+    sleep 0.5
+  done
+  if [[ -z "${width:-}" || -z "${height:-}" || -z "${x:-}" || -z "${y:-}" ]]; then
+    echo "WARNING: failed to resolve Gazebo capture geometry; skipping video recording." >&2
+    return 0
+  fi
+
+  ffmpeg -y -loglevel error \
+    -f x11grab \
+    -framerate "${GAZEBO_VIDEO_FPS}" \
+    -video_size "${width}x${height}" \
+    -draw_mouse 0 \
+    -i "${GAZEBO_VIDEO_DISPLAY}+${x},${y}" \
+    -c:v "${GAZEBO_VIDEO_CODEC}" \
+    -preset "${GAZEBO_VIDEO_PRESET}" \
+    -crf "${GAZEBO_VIDEO_CRF}" \
+    -pix_fmt yuv420p \
+    -movflags +faststart \
+    "${output_path}" >/dev/null 2>&1 &
+  VIDEO_RECORDER_PID=$!
+  sleep 1
+  if ! kill -0 "${VIDEO_RECORDER_PID}" >/dev/null 2>&1; then
+    echo "WARNING: Gazebo video recorder failed to start." >&2
+    VIDEO_RECORDER_PID=0
+    return 0
+  fi
+  echo "Recording Gazebo video to ${output_path}" >&2
+}
+
+maybe_generate_postrun_analyses() {
+  if [[ "${AUTO_DRIFT_ANALYSIS}" != "1" ]]; then
+    return 0
+  fi
+
+  local resolved_results_dir
+  local run_dir
+  local metadata_path
+  local artifact_path
+  local postrun_cmd=()
+
+  if ! resolved_results_dir="$(resolve_results_dir_from_config)"; then
+    echo "WARNING: automatic post-run analysis failed while resolving results_dir." >&2
+    echo "Config path: ${CONFIG_PATH}" >&2
+    return 1
+  fi
+  if ! run_dir="$(resolve_active_run_dir "${resolved_results_dir}")"; then
+    echo "WARNING: automatic post-run analysis failed while resolving run_dir." >&2
+    echo "Resolved results dir: ${resolved_results_dir}" >&2
+    return 1
+  fi
+  metadata_path="${run_dir}/run_metadata.json"
+  if ! artifact_path="$(resolve_artifact_path_from_metadata "${metadata_path}")"; then
     echo "WARNING: automatic post-run analysis failed while resolving artifact_path." >&2
     echo "Resolved run dir: ${run_dir}" >&2
     echo "Metadata path: ${metadata_path}" >&2
@@ -211,6 +367,8 @@ TELEMETRY_PID=$!
 
 python -m quantized_quadrotor_sitl.ros.controller_node --ros-args -p config_path:="${CONFIG_PATH}" &
 CONTROLLER_PID=$!
+
+maybe_start_gazebo_video_recording || true
 
 CONTROLLER_STATUS=0
 if ! wait "${CONTROLLER_PID}"; then

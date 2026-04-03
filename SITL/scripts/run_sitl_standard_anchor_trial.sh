@@ -2,7 +2,7 @@
 set -eo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG_PATH="${1:-${ROOT_DIR}/configs/sitl_runtime_sitl_retrain_edmd_anchor.yaml}"
+CONFIG_PATH="${1:-${ROOT_DIR}/configs/sitl_runtime_sitl_retrain_edmd_anchor_h8.yaml}"
 PACKAGE_ROOT="${ROOT_DIR}/src/quantized_quadrotor_sitl"
 
 if [[ ! -f "${CONFIG_PATH}" ]]; then
