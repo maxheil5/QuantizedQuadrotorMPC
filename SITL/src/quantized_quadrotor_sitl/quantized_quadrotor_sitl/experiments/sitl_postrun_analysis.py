@@ -7,6 +7,7 @@ from pathlib import Path
 from ..core.config import load_runtime_config
 from .sitl_control_audit import analyze_runtime_control_audit
 from .sitl_drift_analysis import analyze_runtime_drift
+from .sitl_milestone_summary import update_milestone_summary_csv
 from .sitl_runtime_health import analyze_runtime_health
 
 
@@ -143,6 +144,7 @@ def run_postrun_edmd_analyses(
     )
     drift_summary = analyze_runtime_drift(log_path=log_path, artifact_path=artifact_path, output_dir=run_dir)
     control_summary = analyze_runtime_control_audit(log_path=log_path, artifact_path=artifact_path, output_dir=run_dir)
+    milestone_summary_path = update_milestone_summary_csv(run_dir)
     return {
         "skipped": False,
         "run_dir": str(run_dir),
@@ -154,6 +156,7 @@ def run_postrun_edmd_analyses(
         "runtime_health_summary_path": str(run_dir / "runtime_health_summary.json"),
         "runtime_validity": runtime_health_summary.get("runtime_validity"),
         "runtime_failure_reason": runtime_health_summary.get("runtime_failure_reason"),
+        "milestone_summary_path": str(milestone_summary_path),
         "drift_summary_path": str(run_dir / "drift_summary.json"),
         "drift_trace_path": str(run_dir / "drift_trace.csv"),
         "selected_branch": drift_summary.get("selected_branch"),

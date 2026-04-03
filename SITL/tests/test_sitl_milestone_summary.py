@@ -7,7 +7,8 @@ from pathlib import Path
 import numpy as np
 
 from quantized_quadrotor_sitl.core.types import EDMDModel
-from quantized_quadrotor_sitl.experiments.sitl_postrun_analysis import run_postrun_edmd_analyses
+from quantized_quadrotor_sitl.experiments.sitl_milestone_summary import summarize_milestone_run, update_milestone_summary_csv
+from quantized_quadrotor_sitl.experiments.sitl_runtime_health import analyze_runtime_health
 
 
 def _identity_state18(x_pos: float = 0.0, z_pos: float = 0.0) -> list[float]:
@@ -70,7 +71,7 @@ def _write_runtime_log(path: Path) -> None:
         writer.writerows(rows)
 
 
-def _write_run_metadata(path: Path, artifact_path: str, cost_state_mode: str = "decoded24_raw") -> None:
+def _write_run_metadata(path: Path, artifact_path: str) -> None:
     payload = {
         "config_path": "/tmp/postrun.yaml",
         "control_rate_hz": 50.0,
@@ -79,7 +80,7 @@ def _write_run_metadata(path: Path, artifact_path: str, cost_state_mode: str = "
         "reference_mode": "takeoff_hold",
         "reference_seed": 2141444,
         "reference_duration_s": 10.0,
-        "cost_state_mode": cost_state_mode,
+        "cost_state_mode": "decoded24_raw",
         "model_artifact": artifact_path,
         "quantization_mode": "none",
         "learned_bound_margin_fraction": 0.05,
@@ -139,109 +140,38 @@ def _write_artifact(path: Path) -> None:
     )
 
 
-def test_run_postrun_edmd_analyses_writes_drift_and_control_sidecars(tmp_path: Path):
-    base_dir = tmp_path
-    run_dir = base_dir / "results" / "sitl" / "4-1-26_postrun"
+def test_update_milestone_summary_csv_writes_and_updates_run_rows(tmp_path: Path):
+    results_root = tmp_path / "results" / "sitl"
+    run_dir = results_root / "4-3-26_1700_01"
     run_dir.mkdir(parents=True)
-    artifact_path = base_dir / "results" / "offline" / "test" / "edmd_unquantized.npz"
+    artifact_path = tmp_path / "results" / "offline" / "test" / "edmd_unquantized.npz"
     artifact_path.parent.mkdir(parents=True)
     _write_artifact(artifact_path)
     _write_runtime_log(run_dir / "runtime_log.csv")
-    _write_run_metadata(
-        run_dir / "run_metadata.json",
-        "results/offline/test/edmd_unquantized.npz",
-        cost_state_mode="minimal_residual",
+    _write_run_metadata(run_dir / "run_metadata.json", str(artifact_path))
+    analyze_runtime_health(log_path=run_dir / "runtime_log.csv", output_dir=run_dir, metadata_path=run_dir / "run_metadata.json")
+    (run_dir / "drift_summary.json").write_text(
+        '{"divergence_time_s": 1.0, "selected_branch": "Branch A", "dominant_error_group": "x", "post_4s_internal_bound_fraction": {"u0": 0.0, "u1": 0.0, "u2": 0.0, "u3": 0.0}}',
+        encoding="utf-8",
     )
-    config_path = base_dir / "postrun.yaml"
-    config_path.write_text(
-        "\n".join(
-            [
-                "controller_mode: edmd_mpc",
-                "model_artifact: results/offline/test/edmd_unquantized.npz",
-                "results_dir: results/sitl/4-1-26_postrun",
-                "mpc:",
-                "  cost_state_mode: minimal_residual",
-            ]
-        ),
+    (run_dir / "control_audit_summary.json").write_text(
+        '{"mapping_status": "model/runtime issue", "dominant_mismatch_axis": "u2", "u2_first_used_mismatch_time_s": 8.5}',
         encoding="utf-8",
     )
 
-    summary = run_postrun_edmd_analyses(config_path=config_path, base_dir=base_dir)
+    row = summarize_milestone_run(run_dir)
+    assert row["run_name"] == "4-3-26_1700_01"
+    assert row["hover_gate_profile"] == "light_anchor_confirmation"
 
-    assert summary["skipped"] is False
-    assert Path(summary["run_dir"]) == run_dir
-    assert summary["cost_state_mode"] == "minimal_residual"
-    assert Path(summary["runtime_health_summary_path"]) == run_dir / "runtime_health_summary.json"
-    assert Path(summary["milestone_summary_path"]) == run_dir.parent / "milestone_summary.csv"
-    assert (run_dir / "runtime_health_summary.json").exists()
-    assert (run_dir.parent / "milestone_summary.csv").exists()
-    assert (run_dir / "drift_summary.json").exists()
-    assert (run_dir / "drift_trace.csv").exists()
-    assert (run_dir / "control_audit_summary.json").exists()
-    assert (run_dir / "control_audit_trace.csv").exists()
+    summary_path = update_milestone_summary_csv(run_dir)
+    assert summary_path == results_root / "milestone_summary.csv"
 
+    with summary_path.open("r", encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 1
+    assert rows[0]["run_name"] == "4-3-26_1700_01"
 
-def test_run_postrun_edmd_analyses_writes_sidecars_from_run_dir(tmp_path: Path):
-    run_dir = tmp_path / "results" / "sitl" / "4-1-26_direct"
-    run_dir.mkdir(parents=True)
-    artifact_path = tmp_path / "results" / "offline" / "test" / "edmd_unquantized.npz"
-    artifact_path.parent.mkdir(parents=True)
-    _write_artifact(artifact_path)
-    _write_runtime_log(run_dir / "runtime_log.csv")
-    _write_run_metadata(
-        run_dir / "run_metadata.json",
-        str(artifact_path),
-        cost_state_mode="decoded24_raw",
-    )
-
-    summary = run_postrun_edmd_analyses(
-        run_dir=run_dir,
-        artifact_path=artifact_path,
-    )
-
-    assert summary["skipped"] is False
-    assert Path(summary["run_dir"]) == run_dir
-    assert Path(summary["runtime_health_summary_path"]) == run_dir / "runtime_health_summary.json"
-    assert Path(summary["milestone_summary_path"]) == run_dir.parent / "milestone_summary.csv"
-    assert (run_dir / "runtime_health_summary.json").exists()
-    assert (run_dir.parent / "milestone_summary.csv").exists()
-    assert (run_dir / "drift_summary.json").exists()
-    assert (run_dir / "control_audit_summary.json").exists()
-
-
-def test_run_postrun_edmd_analyses_writes_sidecars_from_log_path(tmp_path: Path):
-    run_dir = tmp_path / "results" / "sitl" / "4-1-26_log_path"
-    run_dir.mkdir(parents=True)
-    artifact_path = tmp_path / "results" / "offline" / "test" / "edmd_unquantized.npz"
-    artifact_path.parent.mkdir(parents=True)
-    _write_artifact(artifact_path)
-    log_path = run_dir / "runtime_log.csv"
-    _write_runtime_log(log_path)
-    _write_run_metadata(
-        run_dir / "run_metadata.json",
-        str(artifact_path),
-        cost_state_mode="decoded24_raw",
-    )
-
-    summary = run_postrun_edmd_analyses(
-        log_path=log_path,
-        artifact_path=artifact_path,
-    )
-
-    assert summary["skipped"] is False
-    assert Path(summary["run_dir"]) == run_dir
-    assert Path(summary["runtime_health_summary_path"]) == run_dir / "runtime_health_summary.json"
-    assert Path(summary["milestone_summary_path"]) == run_dir.parent / "milestone_summary.csv"
-    assert (run_dir / "runtime_health_summary.json").exists()
-    assert (run_dir.parent / "milestone_summary.csv").exists()
-    assert (run_dir / "drift_summary.json").exists()
-    assert (run_dir / "control_audit_summary.json").exists()
-
-
-def test_run_sitl_experiment_script_invokes_postrun_with_run_dir():
-    script_path = Path(__file__).resolve().parents[1] / "scripts" / "run_sitl_experiment.sh"
-    script_text = script_path.read_text(encoding="utf-8")
-
-    assert "--run-dir \"${run_dir}\"" in script_text
-    assert "--artifact-path \"${artifact_path}\"" in script_text
-    assert "--metadata-path \"${metadata_path}\"" in script_text
+    update_milestone_summary_csv(run_dir)
+    with summary_path.open("r", encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 1

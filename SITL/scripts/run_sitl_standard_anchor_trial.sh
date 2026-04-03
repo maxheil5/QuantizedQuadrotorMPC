@@ -58,6 +58,32 @@ for path in sorted(run_dir.iterdir(), key=lambda item: item.name):
     if path.is_file():
         print(f"  - {path.name}")
 PY
+  local required_files=(
+    "runtime_log.csv"
+    "run_metadata.json"
+    "runtime_health_summary.json"
+    "drift_summary.json"
+    "drift_trace.csv"
+    "control_audit_summary.json"
+    "control_audit_trace.csv"
+  )
+  local missing_required=()
+  local required_file
+  for required_file in "${required_files[@]}"; do
+    if [[ ! -f "${run_dir}/${required_file}" ]]; then
+      missing_required+=("${required_file}")
+    fi
+  done
+  if (( ${#missing_required[@]} == 0 )); then
+    echo "Required files: complete" >&2
+  else
+    echo "Missing required files: ${missing_required[*]}" >&2
+  fi
+  echo "Host cleanup before rerun after invalid-runtime results:" >&2
+  echo "  1. Run one SITL job at a time." >&2
+  echo "  2. Avoid parallel heavy jobs on the Ubuntu host." >&2
+  echo "  3. Use a fresh shell with ROS and the venv sourced once." >&2
+  echo "  4. Restart PX4/Gazebo cleanly with: bash ./scripts/cleanup_sitl_processes.sh" >&2
   echo "It is safe to stop here once you see this summary." >&2
 }
 

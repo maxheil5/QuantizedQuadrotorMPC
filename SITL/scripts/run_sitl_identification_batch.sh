@@ -25,9 +25,7 @@ else
 fi
 
 cleanup_sitl_processes() {
-  pkill -f MicroXRCEAgent >/dev/null 2>&1 || true
-  pkill -f px4 >/dev/null 2>&1 || true
-  pkill -f "gz sim" >/dev/null 2>&1 || true
+  bash "${ROOT_DIR}/scripts/cleanup_sitl_processes.sh"
 }
 
 for seed in "${SEEDS[@]}"; do
