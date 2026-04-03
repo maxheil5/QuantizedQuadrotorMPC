@@ -21,6 +21,29 @@ if [[ -f "${ROOT_DIR}/install/setup.bash" ]]; then
   source "${ROOT_DIR}/install/setup.bash"
 fi
 
+print_run_output_summary() {
+  local run_dir="$1"
+  if [[ -z "${run_dir}" || ! -d "${run_dir}" ]]; then
+    echo "Standard anchor trial finished, but the run directory could not be summarized." >&2
+    return 1
+  fi
+
+  echo "" >&2
+  echo "Standard anchor trial fully complete." >&2
+  echo "Run directory: ${run_dir}" >&2
+  echo "Stored files:" >&2
+  python - "${run_dir}" <<'PY'
+from pathlib import Path
+import sys
+
+run_dir = Path(sys.argv[1])
+for path in sorted(run_dir.iterdir(), key=lambda item: item.name):
+    if path.is_file():
+        print(f"  - {path.name}")
+PY
+  echo "It is safe to stop here once you see this summary." >&2
+}
+
 resolve_run_dir() {
   python - "${CONFIG_PATH}" "${ROOT_DIR}" <<'PY'
 from pathlib import Path
@@ -40,7 +63,7 @@ PY
 }
 
 RUN_STATUS=0
-if ! bash "${ROOT_DIR}/scripts/run_sitl_experiment.sh" "${CONFIG_PATH}"; then
+if ! SITL_PRINT_RUN_OUTPUTS=0 bash "${ROOT_DIR}/scripts/run_sitl_experiment.sh" "${CONFIG_PATH}"; then
   RUN_STATUS=$?
 fi
 
@@ -57,5 +80,7 @@ if run_dir="$(resolve_run_dir)"; then
 else
   echo "WARNING: failed to resolve run directory for ${CONFIG_PATH}; skipping explicit post-run backfill." >&2
 fi
+
+print_run_output_summary "${run_dir:-}" || true
 
 exit "${RUN_STATUS}"

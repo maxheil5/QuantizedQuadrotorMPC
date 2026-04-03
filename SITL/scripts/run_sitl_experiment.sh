@@ -16,6 +16,7 @@ GCS_HEARTBEAT_PORT="${GCS_HEARTBEAT_PORT:-18570}"
 GCS_HEARTBEAT_RATE_HZ="${GCS_HEARTBEAT_RATE_HZ:-1.0}"
 AUTO_DRIFT_ANALYSIS="${AUTO_DRIFT_ANALYSIS:-1}"
 AUTO_GAZEBO_VIDEO_RECORDING="${AUTO_GAZEBO_VIDEO_RECORDING:-1}"
+SITL_PRINT_RUN_OUTPUTS="${SITL_PRINT_RUN_OUTPUTS:-1}"
 GAZEBO_VIDEO_DISPLAY="${GAZEBO_VIDEO_DISPLAY:-${DISPLAY:-}}"
 GAZEBO_VIDEO_FPS="${GAZEBO_VIDEO_FPS:-30}"
 GAZEBO_VIDEO_WAIT_SECONDS="${GAZEBO_VIDEO_WAIT_SECONDS:-20}"
@@ -29,6 +30,7 @@ VIDEO_RECORDER_PID=0
 VIDEO_RECORDER_OUTPUT_PATH=""
 VIDEO_RECORDER_TEMP_PATH=""
 VIDEO_RECORDER_FINALIZED=0
+VIDEO_RECORDER_CAPTURE_SOURCE=""
 GZ_MODELS_DIR="${ROOT_DIR}/artifacts/generated/gazebo_models"
 GZ_WORLDS_DIR="${ROOT_DIR}/configs/gazebo/worlds"
 PX4_BUNDLED_MODELS_DIR="${PX4_DIR}/Tools/simulation/gz/models"
@@ -190,24 +192,34 @@ resolve_full_display_geometry() {
 resolve_window_geometry() {
   local display="$1"
   local pattern="$2"
-  local window_id info width height x y
+  local window_ids window_id info width height x y area
+  local best_area=0
+  local best_geometry=""
   if ! command -v xdotool >/dev/null 2>&1 || ! command -v xwininfo >/dev/null 2>&1; then
     return 1
   fi
-  window_id="$(DISPLAY="${display}" xdotool search --name "${pattern}" 2>/dev/null | head -n1 || true)"
-  if [[ -z "${window_id}" ]]; then
+  window_ids="$(DISPLAY="${display}" xdotool search --onlyvisible --name "${pattern}" 2>/dev/null || true)"
+  if [[ -z "${window_ids}" ]]; then
     return 1
   fi
-  info="$(DISPLAY="${display}" xwininfo -id "${window_id}" 2>/dev/null || true)"
-  if [[ -z "${info}" ]]; then
-    return 1
-  fi
-  width="$(awk -F: '/Width:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
-  height="$(awk -F: '/Height:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
-  x="$(awk -F: '/Absolute upper-left X:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
-  y="$(awk -F: '/Absolute upper-left Y:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
-  if [[ "${width}" =~ ^[0-9]+$ && "${height}" =~ ^[0-9]+$ && "${x}" =~ ^-?[0-9]+$ && "${y}" =~ ^-?[0-9]+$ ]]; then
-    echo "${width} ${height} ${x} ${y}"
+  while IFS= read -r window_id; do
+    [[ -z "${window_id}" ]] && continue
+    info="$(DISPLAY="${display}" xwininfo -id "${window_id}" 2>/dev/null || true)"
+    [[ -z "${info}" ]] && continue
+    width="$(awk -F: '/Width:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
+    height="$(awk -F: '/Height:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
+    x="$(awk -F: '/Absolute upper-left X:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
+    y="$(awk -F: '/Absolute upper-left Y:/ {gsub(/ /, "", $2); print $2; exit}' <<<"${info}")"
+    if [[ "${width}" =~ ^[0-9]+$ && "${height}" =~ ^[0-9]+$ && "${x}" =~ ^-?[0-9]+$ && "${y}" =~ ^-?[0-9]+$ ]]; then
+      area=$((width * height))
+      if (( area > best_area )); then
+        best_area=${area}
+        best_geometry="${width} ${height} ${x} ${y}"
+      fi
+    fi
+  done <<<"${window_ids}"
+  if [[ -n "${best_geometry}" ]]; then
+    echo "${best_geometry}"
     return 0
   fi
   return 1
@@ -218,13 +230,21 @@ resolve_capture_geometry() {
   local geometry="${GAZEBO_VIDEO_GEOMETRY}"
   if [[ -n "${geometry}" ]]; then
     if [[ "${geometry}" =~ ^([0-9]+)x([0-9]+)\+(-?[0-9]+),(-?[0-9]+)$ ]]; then
+      VIDEO_RECORDER_CAPTURE_SOURCE="manual"
       echo "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]} ${BASH_REMATCH[4]}"
       return 0
     fi
     echo "WARNING: invalid GAZEBO_VIDEO_GEOMETRY='${geometry}', expected WIDTHxHEIGHT+X,Y" >&2
   fi
-  resolve_window_geometry "${display}" "${GAZEBO_VIDEO_WINDOW_PATTERN}" && return 0
-  resolve_full_display_geometry "${display}"
+  if resolve_window_geometry "${display}" "${GAZEBO_VIDEO_WINDOW_PATTERN}"; then
+    VIDEO_RECORDER_CAPTURE_SOURCE="window"
+    return 0
+  fi
+  if resolve_full_display_geometry "${display}"; then
+    VIDEO_RECORDER_CAPTURE_SOURCE="display"
+    return 0
+  fi
+  return 1
 }
 
 maybe_start_gazebo_video_recording() {
@@ -262,6 +282,7 @@ maybe_start_gazebo_video_recording() {
   VIDEO_RECORDER_OUTPUT_PATH="${output_path}"
   VIDEO_RECORDER_TEMP_PATH="${base_output_path}.recording.mkv"
   VIDEO_RECORDER_FINALIZED=0
+  VIDEO_RECORDER_CAPTURE_SOURCE=""
 
   deadline=$((SECONDS + GAZEBO_VIDEO_WAIT_SECONDS))
   while (( SECONDS < deadline )); do
@@ -285,6 +306,7 @@ maybe_start_gazebo_video_recording() {
     -c:v "${GAZEBO_VIDEO_CODEC}" \
     -preset "${GAZEBO_VIDEO_PRESET}" \
     -crf "${GAZEBO_VIDEO_CRF}" \
+    -vf "setsar=1" \
     -pix_fmt yuv420p \
     -f matroska \
     "${VIDEO_RECORDER_TEMP_PATH}" >/dev/null 2>&1 &
@@ -295,7 +317,7 @@ maybe_start_gazebo_video_recording() {
     VIDEO_RECORDER_PID=0
     return 0
   fi
-  echo "Recording Gazebo video to ${VIDEO_RECORDER_TEMP_PATH} (will finalize to ${VIDEO_RECORDER_OUTPUT_PATH})" >&2
+  echo "Recording Gazebo video from ${VIDEO_RECORDER_CAPTURE_SOURCE:-unknown} geometry ${width}x${height}+${x},${y} to ${VIDEO_RECORDER_TEMP_PATH} (will finalize to ${VIDEO_RECORDER_OUTPUT_PATH})" >&2
 }
 
 finalize_gazebo_video_recording() {
@@ -392,6 +414,41 @@ maybe_generate_postrun_analyses() {
   fi
 }
 
+print_run_output_summary() {
+  if [[ "${SITL_PRINT_RUN_OUTPUTS}" != "1" ]]; then
+    return 0
+  fi
+
+  local resolved_results_dir run_dir
+  if ! resolved_results_dir="$(resolve_results_dir_from_config)"; then
+    echo "SITL cleanup finished, but the final results directory could not be resolved." >&2
+    return 1
+  fi
+  if ! run_dir="$(resolve_active_run_dir "${resolved_results_dir}")"; then
+    echo "SITL cleanup finished, but the final run directory could not be resolved." >&2
+    return 1
+  fi
+  if [[ ! -d "${run_dir}" ]]; then
+    echo "SITL cleanup finished, but the run directory does not exist yet: ${run_dir}" >&2
+    return 1
+  fi
+
+  echo "" >&2
+  echo "SITL run fully complete." >&2
+  echo "Run directory: ${run_dir}" >&2
+  echo "Stored files:" >&2
+  python - "${run_dir}" <<'PY'
+from pathlib import Path
+import sys
+
+run_dir = Path(sys.argv[1])
+for path in sorted(run_dir.iterdir(), key=lambda item: item.name):
+    if path.is_file():
+        print(f"  - {path.name}")
+PY
+  echo "It is safe to stop here once you see this summary." >&2
+}
+
 if [[ ! -x "${PX4_DIR}/build/px4_sitl_default/bin/px4" ]]; then
   pushd "${PX4_DIR}" >/dev/null
   make px4_sitl
@@ -434,4 +491,5 @@ fi
 
 stop_gazebo_video_recording
 maybe_generate_postrun_analyses || true
+print_run_output_summary || true
 exit "${CONTROLLER_STATUS}"
