@@ -39,9 +39,6 @@ sudo apt-get install -y \
   build-essential \
   cmake \
   ninja-build \
-  ffmpeg \
-  xdotool \
-  x11-utils \
   python3-venv \
   python3-pip \
   python3-colcon-common-extensions \
