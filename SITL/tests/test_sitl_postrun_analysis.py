@@ -179,6 +179,10 @@ def test_run_postrun_edmd_analyses_writes_drift_and_control_sidecars(tmp_path: P
     assert (run_dir / "drift_trace.csv").exists()
     assert (run_dir / "control_audit_summary.json").exists()
     assert (run_dir / "control_audit_trace.csv").exists()
+    assert Path(summary["u2_root_cause_summary_path"]) == run_dir / "u2_root_cause_summary.json"
+    assert Path(summary["u2_root_cause_trace_path"]) == run_dir / "u2_root_cause_trace.csv"
+    assert (run_dir / "u2_root_cause_summary.json").exists()
+    assert (run_dir / "u2_root_cause_trace.csv").exists()
 
 
 def test_run_postrun_edmd_analyses_writes_sidecars_from_run_dir(tmp_path: Path):
@@ -207,6 +211,8 @@ def test_run_postrun_edmd_analyses_writes_sidecars_from_run_dir(tmp_path: Path):
     assert (run_dir.parent / "milestone_summary.csv").exists()
     assert (run_dir / "drift_summary.json").exists()
     assert (run_dir / "control_audit_summary.json").exists()
+    assert (run_dir / "u2_root_cause_summary.json").exists()
+    assert (run_dir / "u2_root_cause_trace.csv").exists()
 
 
 def test_run_postrun_edmd_analyses_writes_sidecars_from_log_path(tmp_path: Path):
@@ -236,6 +242,8 @@ def test_run_postrun_edmd_analyses_writes_sidecars_from_log_path(tmp_path: Path)
     assert (run_dir.parent / "milestone_summary.csv").exists()
     assert (run_dir / "drift_summary.json").exists()
     assert (run_dir / "control_audit_summary.json").exists()
+    assert (run_dir / "u2_root_cause_summary.json").exists()
+    assert (run_dir / "u2_root_cause_trace.csv").exists()
 
 
 def test_run_sitl_experiment_script_invokes_postrun_with_run_dir():

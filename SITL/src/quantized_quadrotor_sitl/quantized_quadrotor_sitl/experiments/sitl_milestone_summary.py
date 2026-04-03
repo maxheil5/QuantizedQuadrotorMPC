@@ -27,6 +27,10 @@ MILESTONE_SUMMARY_FIELDS = [
     "solver_mean_ms",
     "divergence_time_s",
     "u2_first_used_mismatch_time_s",
+    "u2_first_raw_mismatch_time_s",
+    "u2_late_window_raw_sign_match",
+    "u2_late_window_used_sign_match",
+    "u2_root_cause_classification",
 ]
 
 
@@ -55,6 +59,7 @@ def summarize_milestone_run(run_dir: Path) -> dict[str, object]:
     metadata = _load_optional_json(resolved_run_dir / "run_metadata.json")
     drift_summary = _load_optional_json(resolved_run_dir / "drift_summary.json")
     control_summary = _load_optional_json(resolved_run_dir / "control_audit_summary.json")
+    u2_root_cause_summary = _load_optional_json(resolved_run_dir / "u2_root_cause_summary.json")
 
     profile = milestone_profile_for_metadata(metadata)
     evaluation = evaluate_hover_gates(log_path, profile=profile) if profile != "unsupported" else {
@@ -91,6 +96,10 @@ def summarize_milestone_run(run_dir: Path) -> dict[str, object]:
             if evaluation.get("u2_first_used_mismatch_time_s") is not None
             else control_summary.get("u2_first_used_mismatch_time_s")
         ),
+        "u2_first_raw_mismatch_time_s": u2_root_cause_summary.get("u2_first_raw_mismatch_time_s"),
+        "u2_late_window_raw_sign_match": u2_root_cause_summary.get("u2_late_window_raw_sign_match"),
+        "u2_late_window_used_sign_match": u2_root_cause_summary.get("u2_late_window_used_sign_match"),
+        "u2_root_cause_classification": u2_root_cause_summary.get("u2_root_cause_classification"),
     }
     return row
 

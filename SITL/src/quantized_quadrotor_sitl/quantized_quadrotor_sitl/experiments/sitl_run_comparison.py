@@ -65,6 +65,7 @@ def _run_snapshot(run_dir: Path, *, profile: str | None = None) -> dict[str, Any
     runtime_health = load_runtime_health_summary(log_path)
     drift_summary = load_drift_summary(log_path)
     control_summary = load_control_audit_summary(log_path)
+    u2_root_cause_summary = _load_optional_json(resolved_run_dir / "u2_root_cause_summary.json")
     metrics = evaluation.get("metrics", {})
     drift_post_four = drift_summary.get("post_4s_internal_bound_fraction", {}) if drift_summary else {}
 
@@ -76,6 +77,7 @@ def _run_snapshot(run_dir: Path, *, profile: str | None = None) -> dict[str, Any
         "runtime_failure_reason": evaluation.get("runtime_failure_reason"),
         "hover_gate_passed": evaluation.get("passed"),
         "controller_quality_evaluated": evaluation.get("controller_quality_evaluated"),
+        "u2_root_cause_classification": u2_root_cause_summary.get("u2_root_cause_classification"),
         "metadata": {
             "config_path": metadata.get("config_path"),
             "controller_mode": metadata.get("controller_mode"),
@@ -147,6 +149,16 @@ def _run_snapshot(run_dir: Path, *, profile: str | None = None) -> dict[str, Any
             "anchor_sign_flip_count": None
             if control_summary is None
             else _axis_float(control_summary, "anchor_sign_flip_count_by_axis", "u2"),
+            "one_step_prediction_rmse_before_raw_mismatch": (
+                None
+                if not u2_root_cause_summary
+                else u2_root_cause_summary.get("one_step_prediction_rmse_before_raw_u2_mismatch")
+            ),
+            "one_step_prediction_rmse_after_raw_mismatch": (
+                None
+                if not u2_root_cause_summary
+                else u2_root_cause_summary.get("one_step_prediction_rmse_after_raw_u2_mismatch")
+            ),
         },
     }
 
@@ -192,7 +204,7 @@ def _classify_u2_regression(reference: dict[str, Any], candidate: dict[str, Any]
 
 
 def _recommended_next_step(classification: str) -> str:
-    if classification == "candidate_runtime_invalid":
+    if classification in {"candidate_runtime_invalid", "runtime_invalid"}:
         return "Treat the candidate run as invalid runtime and rerun after host cleanup before interpreting MPC behavior."
     if classification == "raw_u2_late_sign_instability":
         return "Inspect the learned raw u2 state-to-control path and late-window residual alignment before changing anchor settings."
@@ -212,7 +224,9 @@ def compare_sitl_runs(
 ) -> dict[str, Any]:
     reference = _run_snapshot(reference_run_dir, profile=reference_profile)
     candidate = _run_snapshot(candidate_run_dir, profile=candidate_profile)
-    classification = _classify_u2_regression(reference, candidate)
+    classification = str(candidate.get("u2_root_cause_classification") or "") or _classify_u2_regression(reference, candidate)
+    if classification == "inconclusive":
+        classification = _classify_u2_regression(reference, candidate)
 
     delta_summary = {
         "final_altitude_error": _delta(candidate["metrics"]["final_altitude_error"], reference["metrics"]["final_altitude_error"]),

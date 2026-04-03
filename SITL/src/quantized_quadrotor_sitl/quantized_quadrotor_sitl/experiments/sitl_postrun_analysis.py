@@ -9,6 +9,7 @@ from .sitl_control_audit import analyze_runtime_control_audit
 from .sitl_drift_analysis import analyze_runtime_drift
 from .sitl_milestone_summary import update_milestone_summary_csv
 from .sitl_runtime_health import analyze_runtime_health
+from .sitl_u2_root_cause import analyze_runtime_u2_root_cause
 
 
 def _resolve_path(raw_path: str | Path, base_dir: Path) -> Path:
@@ -144,6 +145,12 @@ def run_postrun_edmd_analyses(
     )
     drift_summary = analyze_runtime_drift(log_path=log_path, artifact_path=artifact_path, output_dir=run_dir)
     control_summary = analyze_runtime_control_audit(log_path=log_path, artifact_path=artifact_path, output_dir=run_dir)
+    u2_root_cause_summary = analyze_runtime_u2_root_cause(
+        log_path=log_path,
+        artifact_path=artifact_path,
+        metadata_path=(run_dir / "run_metadata.json") if metadata_path is None else Path(metadata_path),
+        output_dir=run_dir,
+    )
     milestone_summary_path = update_milestone_summary_csv(run_dir)
     return {
         "skipped": False,
@@ -165,6 +172,9 @@ def run_postrun_edmd_analyses(
         "control_audit_trace_path": str(run_dir / "control_audit_trace.csv"),
         "mapping_status": control_summary.get("mapping_status"),
         "dominant_mismatch_axis": control_summary.get("dominant_mismatch_axis"),
+        "u2_root_cause_summary_path": str(run_dir / "u2_root_cause_summary.json"),
+        "u2_root_cause_trace_path": str(run_dir / "u2_root_cause_trace.csv"),
+        "u2_root_cause_classification": u2_root_cause_summary.get("u2_root_cause_classification"),
     }
 
 

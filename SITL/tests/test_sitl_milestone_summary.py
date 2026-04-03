@@ -158,10 +158,22 @@ def test_update_milestone_summary_csv_writes_and_updates_run_rows(tmp_path: Path
         '{"mapping_status": "model/runtime issue", "dominant_mismatch_axis": "u2", "u2_first_used_mismatch_time_s": 8.5}',
         encoding="utf-8",
     )
+    (run_dir / "u2_root_cause_summary.json").write_text(
+        json.dumps(
+            {
+                "u2_first_raw_mismatch_time_s": 8.2,
+                "u2_late_window_raw_sign_match": 0.95,
+                "u2_late_window_used_sign_match": 0.97,
+                "u2_root_cause_classification": "inconclusive",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     row = summarize_milestone_run(run_dir)
     assert row["run_name"] == "4-3-26_1700_01"
     assert row["hover_gate_profile"] == "light_anchor_confirmation"
+    assert row["u2_root_cause_classification"] == "inconclusive"
 
     summary_path = update_milestone_summary_csv(run_dir)
     assert summary_path == results_root / "milestone_summary.csv"
@@ -170,6 +182,7 @@ def test_update_milestone_summary_csv_writes_and_updates_run_rows(tmp_path: Path
         rows = list(csv.DictReader(stream))
     assert len(rows) == 1
     assert rows[0]["run_name"] == "4-3-26_1700_01"
+    assert rows[0]["u2_root_cause_classification"] == "inconclusive"
 
     update_milestone_summary_csv(run_dir)
     with summary_path.open("r", encoding="utf-8", newline="") as stream:

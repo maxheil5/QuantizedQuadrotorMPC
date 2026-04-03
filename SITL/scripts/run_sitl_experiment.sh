@@ -307,6 +307,8 @@ PY
     "drift_trace.csv"
     "control_audit_summary.json"
     "control_audit_trace.csv"
+    "u2_root_cause_summary.json"
+    "u2_root_cause_trace.csv"
   )
   local missing_required=()
   local required_file
