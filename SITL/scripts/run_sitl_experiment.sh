@@ -31,6 +31,7 @@ VIDEO_RECORDER_OUTPUT_PATH=""
 VIDEO_RECORDER_TEMP_PATH=""
 VIDEO_RECORDER_FINALIZED=0
 VIDEO_RECORDER_CAPTURE_SOURCE=""
+VIDEO_RECORDER_FINALIZE_LOG_PATH=""
 SIMULATION_STACK_STOPPED=0
 PX4_PGID=""
 RUN_LAUNCH_EPOCH="$(date +%s)"
@@ -325,6 +326,7 @@ maybe_start_gazebo_video_recording() {
   fi
   VIDEO_RECORDER_OUTPUT_PATH="${output_path}"
   VIDEO_RECORDER_TEMP_PATH="${base_output_path}.recording.mkv"
+  VIDEO_RECORDER_FINALIZE_LOG_PATH="${base_output_path}.finalize.log"
   VIDEO_RECORDER_FINALIZED=0
   VIDEO_RECORDER_CAPTURE_SOURCE=""
 
@@ -365,6 +367,7 @@ maybe_start_gazebo_video_recording() {
 }
 
 finalize_gazebo_video_recording() {
+  local temp_output_path=""
   if [[ "${VIDEO_RECORDER_FINALIZED:-0}" == "1" ]]; then
     return 0
   fi
@@ -382,12 +385,32 @@ finalize_gazebo_video_recording() {
       echo "WARNING: ffmpeg is unavailable for MP4 finalization; leaving ${VIDEO_RECORDER_TEMP_PATH} in place." >&2
       return 1
     fi
-    if ffmpeg -y -loglevel error -i "${VIDEO_RECORDER_TEMP_PATH}" -c copy -movflags +faststart "${VIDEO_RECORDER_OUTPUT_PATH}" >/dev/null 2>&1; then
+    temp_output_path="${VIDEO_RECORDER_OUTPUT_PATH}.tmp.mp4"
+    rm -f "${temp_output_path}" >/dev/null 2>&1 || true
+    if ffmpeg -y -loglevel error -i "${VIDEO_RECORDER_TEMP_PATH}" -c copy -movflags +faststart "${temp_output_path}" >"${VIDEO_RECORDER_FINALIZE_LOG_PATH}" 2>&1; then
+      mv -f "${temp_output_path}" "${VIDEO_RECORDER_OUTPUT_PATH}"
       rm -f "${VIDEO_RECORDER_TEMP_PATH}" >/dev/null 2>&1 || true
+      rm -f "${VIDEO_RECORDER_FINALIZE_LOG_PATH}" >/dev/null 2>&1 || true
       echo "Finalized Gazebo video to ${VIDEO_RECORDER_OUTPUT_PATH}" >&2
       return 0
     fi
-    echo "WARNING: failed to remux Gazebo recording to MP4; keeping ${VIDEO_RECORDER_TEMP_PATH}." >&2
+    if ffmpeg -y -loglevel error -i "${VIDEO_RECORDER_TEMP_PATH}" \
+      -c:v "${GAZEBO_VIDEO_CODEC}" \
+      -preset "${GAZEBO_VIDEO_PRESET}" \
+      -crf "${GAZEBO_VIDEO_CRF}" \
+      -vf "setsar=1" \
+      -pix_fmt yuv420p \
+      -movflags +faststart \
+      "${temp_output_path}" >>"${VIDEO_RECORDER_FINALIZE_LOG_PATH}" 2>&1; then
+      mv -f "${temp_output_path}" "${VIDEO_RECORDER_OUTPUT_PATH}"
+      rm -f "${VIDEO_RECORDER_TEMP_PATH}" >/dev/null 2>&1 || true
+      rm -f "${VIDEO_RECORDER_FINALIZE_LOG_PATH}" >/dev/null 2>&1 || true
+      echo "Finalized Gazebo video to ${VIDEO_RECORDER_OUTPUT_PATH} after re-encoding." >&2
+      return 0
+    fi
+    rm -f "${temp_output_path}" >/dev/null 2>&1 || true
+    echo "WARNING: failed to finalize Gazebo recording to MP4; keeping ${VIDEO_RECORDER_TEMP_PATH}." >&2
+    echo "Finalize log: ${VIDEO_RECORDER_FINALIZE_LOG_PATH}" >&2
     return 1
   fi
 

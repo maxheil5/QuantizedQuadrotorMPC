@@ -21,10 +21,13 @@ def test_run_sitl_experiment_script_supports_gazebo_video_recording():
     assert "print_run_output_summary" in script_text
     assert "xdotool search --onlyvisible" in script_text
     assert "VIDEO_RECORDER_CAPTURE_SOURCE" in script_text
+    assert "VIDEO_RECORDER_FINALIZE_LOG_PATH" in script_text
     assert "PREVIOUS_ACTIVE_RUN_DIR" in script_text
     assert "RUN_LAUNCH_EPOCH" in script_text
     assert "metadata_path.stat().st_mtime >= launch_epoch" in script_text
     assert 'setsar=1' in script_text
+    assert 'Finalized Gazebo video to ${VIDEO_RECORDER_OUTPUT_PATH} after re-encoding.' in script_text
+    assert 'failed to finalize Gazebo recording to MP4' in script_text
     assert "Stored files:" in script_text
     assert "gazebo_recording.mp4" in script_text
     assert ".recording.mkv" in script_text
