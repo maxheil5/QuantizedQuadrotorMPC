@@ -10,6 +10,7 @@ LOWLEVEL_PKG_ROOT="${WORKSPACE_ROOT}/src/mav_control_rw/mav_lowlevel_attitude_co
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_DIR="${V2_ROOT}/results/runtime_logs/koopman_hover/${STAMP}"
 PID_FILE="${RUN_DIR}/pids.env"
+LATEST_MANAGED_RUN="$(ls -td "${V2_ROOT}/results/runtime_logs/koopman_hover"/* 2>/dev/null | head -n 1 || true)"
 
 mkdir -p "${RUN_DIR}"
 
@@ -106,6 +107,25 @@ stop_existing_node_if_running() {
   fi
 }
 
+show_log_tail_and_exit() {
+  local log_path="$1"
+  local description="$2"
+
+  echo "${description} failed. Recent log output from ${log_path}:" >&2
+  if [[ -f "${log_path}" ]]; then
+    tail -n 80 "${log_path}" >&2 || true
+  else
+    echo "  Log file not found." >&2
+  fi
+  exit 1
+}
+
+if [[ -n "${LATEST_MANAGED_RUN}" && "${LATEST_MANAGED_RUN}" != "${RUN_DIR}" && -f "${LATEST_MANAGED_RUN}/pids.env" ]]; then
+  echo "Stopping previous managed hover stack: ${LATEST_MANAGED_RUN}"
+  bash "${SCRIPT_DIR}/stop_koopman_hover_stack.sh" "${LATEST_MANAGED_RUN}" >/dev/null 2>&1 || true
+  sleep 2
+fi
+
 if rosnode list >/dev/null 2>&1; then
   echo "Using existing ROS master."
 else
@@ -145,7 +165,9 @@ echo "Starting learned hover node."
 nohup env ROS_NAMESPACE=firefly rosrun koopman_mpc_ros koopman_mpc_node.py __name:=koopman_mpc_node "_model_path:=${MODEL_PATH}" _parameter_profile:=rotors_firefly_linear_mpc_runtime _pred_horizon:=10 _qp_max_iter:=100 odometry:=ground_truth/odometry > "${RUN_DIR}/koopman_mpc_node.log" 2>&1 &
 koopman_pid="$!"
 koopman_started_by_script=1
-wait_for_success "rosnode list | grep -q '^/firefly/koopman_mpc_node$'" "koopman_mpc_node"
+if ! wait_for_success "rosnode list | grep -q '^/firefly/koopman_mpc_node$'" "koopman_mpc_node"; then
+  show_log_tail_and_exit "${RUN_DIR}/koopman_mpc_node.log" "Starting koopman_mpc_node"
+fi
 
 ensure_lowlevel_firefly_yaml_links
 
@@ -156,7 +178,9 @@ echo "Starting low-level attitude controller."
 nohup roslaunch mav_lowlevel_attitude_controller mav_lowlevel_controller.launch > "${RUN_DIR}/mav_lowlevel_attitude_controller.log" 2>&1 &
 lowlevel_pid="$!"
 lowlevel_started_by_script=1
-wait_for_success "rosnode list | grep -q '^/firefly/mav_lowlevel_attitude_controller$'" "mav_lowlevel_attitude_controller"
+if ! wait_for_success "rosnode list | grep -q '^/firefly/mav_lowlevel_attitude_controller$'" "mav_lowlevel_attitude_controller"; then
+  show_log_tail_and_exit "${RUN_DIR}/mav_lowlevel_attitude_controller.log" "Starting mav_lowlevel_attitude_controller"
+fi
 
 {
   echo "run_dir='${RUN_DIR}'"
