@@ -7,6 +7,11 @@ REPO_ROOT="$(cd "${V2_ROOT}/.." && pwd)"
 WORKSPACE_ROOT="${1:-$(cd "${REPO_ROOT}/.." && pwd)}"
 MODEL_PATH="${2:-}"
 LOWLEVEL_PKG_ROOT="${WORKSPACE_ROOT}/src/mav_control_rw/mav_lowlevel_attitude_controller"
+KOOPMAN_MODEL_VARIANT="${KOOPMAN_MODEL_VARIANT:-unquantized}"
+KOOPMAN_SCENARIO="${KOOPMAN_SCENARIO:-hover_5s}"
+KOOPMAN_WORD_LENGTH="${KOOPMAN_WORD_LENGTH:-12}"
+KOOPMAN_REALIZATIONS="${KOOPMAN_REALIZATIONS:-5}"
+KOOPMAN_REALIZATION_INDEX="${KOOPMAN_REALIZATION_INDEX:-0}"
 KOOPMAN_QP_MAX_ITER="${KOOPMAN_QP_MAX_ITER:-300}"
 KOOPMAN_QP_TOL="${KOOPMAN_QP_TOL:-1e-4}"
 KOOPMAN_USE_HYBRID_VERTICAL_CONTROLLER="${KOOPMAN_USE_HYBRID_VERTICAL_CONTROLLER:-true}"
@@ -20,15 +25,45 @@ mkdir -p "${RUN_DIR}"
 source /opt/ros/noetic/setup.bash
 source "${WORKSPACE_ROOT}/devel/setup.bash"
 
-if [[ -z "${MODEL_PATH}" ]]; then
-  latest_run="$(ls -td "${V2_ROOT}/results/learned/unquantized/hover_5s"/* 2>/dev/null | head -n 1 || true)"
-  if [[ -n "${latest_run}" ]]; then
-    MODEL_PATH="${latest_run}/model.npz"
+resolve_default_model_path() {
+  if [[ "${KOOPMAN_MODEL_VARIANT}" == "unquantized" ]]; then
+    local latest_run
+    latest_run="$(ls -td "${V2_ROOT}/results/learned/unquantized/${KOOPMAN_SCENARIO}"/* 2>/dev/null | head -n 1 || true)"
+    if [[ -n "${latest_run}" ]]; then
+      echo "${latest_run}/model.npz"
+      return 0
+    fi
+    return 1
   fi
+
+  if [[ "${KOOPMAN_MODEL_VARIANT}" == "quantized" ]]; then
+    local latest_run
+    local realization_id
+    latest_run="$(ls -td "${V2_ROOT}/results/learned/quantized/wl_${KOOPMAN_WORD_LENGTH}/N_${KOOPMAN_REALIZATIONS}/${KOOPMAN_SCENARIO}"/* 2>/dev/null | head -n 1 || true)"
+    if [[ -z "${latest_run}" ]]; then
+      return 1
+    fi
+    printf -v realization_id "%03d" "${KOOPMAN_REALIZATION_INDEX}"
+    echo "${latest_run}/realizations/realization_${realization_id}/model.npz"
+    return 0
+  fi
+
+  echo "Unsupported KOOPMAN_MODEL_VARIANT=${KOOPMAN_MODEL_VARIANT}. Use unquantized or quantized." >&2
+  return 1
+}
+
+if [[ -z "${MODEL_PATH}" ]]; then
+  MODEL_PATH="$(resolve_default_model_path || true)"
 fi
 
 if [[ -z "${MODEL_PATH}" || ! -f "${MODEL_PATH}" ]]; then
-  echo "Could not find a valid model.npz. Pass it as the second argument." >&2
+  echo "Could not find a valid model.npz." >&2
+  echo "  KOOPMAN_MODEL_VARIANT=${KOOPMAN_MODEL_VARIANT}" >&2
+  echo "  KOOPMAN_SCENARIO=${KOOPMAN_SCENARIO}" >&2
+  echo "  KOOPMAN_WORD_LENGTH=${KOOPMAN_WORD_LENGTH}" >&2
+  echo "  KOOPMAN_REALIZATIONS=${KOOPMAN_REALIZATIONS}" >&2
+  echo "  KOOPMAN_REALIZATION_INDEX=${KOOPMAN_REALIZATION_INDEX}" >&2
+  echo "Pass an explicit model path as the second argument, or build the matching offline model first." >&2
   exit 1
 fi
 
@@ -207,6 +242,11 @@ fi
   echo "run_dir='${RUN_DIR}'"
   echo "workspace_root='${WORKSPACE_ROOT}'"
   echo "model_path='${MODEL_PATH}'"
+  echo "koopman_model_variant='${KOOPMAN_MODEL_VARIANT}'"
+  echo "koopman_scenario='${KOOPMAN_SCENARIO}'"
+  echo "koopman_word_length='${KOOPMAN_WORD_LENGTH}'"
+  echo "koopman_realizations='${KOOPMAN_REALIZATIONS}'"
+  echo "koopman_realization_index='${KOOPMAN_REALIZATION_INDEX}'"
   echo "koopman_qp_max_iter='${KOOPMAN_QP_MAX_ITER}'"
   echo "koopman_qp_tol='${KOOPMAN_QP_TOL}'"
   echo "koopman_use_hybrid_vertical_controller='${KOOPMAN_USE_HYBRID_VERTICAL_CONTROLLER}'"
@@ -232,6 +272,11 @@ Hover command:
   rostopic pub -1 /firefly/command/pose geometry_msgs/PoseStamped "{header: {frame_id: 'world'}, pose: {position: {x: 0.0, y: 0.0, z: 1.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}"
 
 Online MPC settings:
+  KOOPMAN_MODEL_VARIANT=${KOOPMAN_MODEL_VARIANT}
+  KOOPMAN_SCENARIO=${KOOPMAN_SCENARIO}
+  KOOPMAN_WORD_LENGTH=${KOOPMAN_WORD_LENGTH}
+  KOOPMAN_REALIZATIONS=${KOOPMAN_REALIZATIONS}
+  KOOPMAN_REALIZATION_INDEX=${KOOPMAN_REALIZATION_INDEX}
   KOOPMAN_QP_MAX_ITER=${KOOPMAN_QP_MAX_ITER}
   KOOPMAN_QP_TOL=${KOOPMAN_QP_TOL}
   KOOPMAN_USE_HYBRID_VERTICAL_CONTROLLER=${KOOPMAN_USE_HYBRID_VERTICAL_CONTROLLER}
