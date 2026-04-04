@@ -56,8 +56,11 @@ def _polyline_points(x_values: np.ndarray, y_values: np.ndarray, plot_box: tuple
     x_span = max(x_max - x_min, np.finfo(float).eps)
     y_span = max(y_max - y_min, np.finfo(float).eps)
 
+    if len(x_values) != len(y_values):
+        raise ValueError("x_values and y_values must have the same length.")
+
     points = []
-    for x_val, y_val in zip(x_values, y_values, strict=True):
+    for x_val, y_val in zip(x_values, y_values):
         px = left + width * ((float(x_val) - x_min) / x_span)
         py = top + height * (1.0 - ((float(y_val) - y_min) / y_span))
         points.append(f"{px:.2f},{py:.2f}")
@@ -114,7 +117,10 @@ def write_line_plot(
 
     lines.append(f"<rect x='{plot_box[0]:.2f}' y='{plot_box[1]:.2f}' width='{plot_box[2]:.2f}' height='{plot_box[3]:.2f}' fill='none' stroke='{COLORS['axis']}' stroke-width='1.5' />")
 
-    for item, values in zip(series, y_arrays, strict=True):
+    if len(series) != len(y_arrays):
+        raise ValueError("series and y_arrays must have the same length.")
+
+    for item, values in zip(series, y_arrays):
         points = _polyline_points(x, values, plot_box, data_bounds)
         lines.append(f"<polyline fill='none' stroke='{item.color}' stroke-width='2.4' points='{points}' />")
 
