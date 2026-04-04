@@ -73,14 +73,9 @@ class KoopmanMpcRosNode:
             model=load_edmd_model(model_path),
             config=runtime_config,
         )
-        self.altitude_assist_kp = float(rospy.get_param("~altitude_assist_kp", 7.0))
-        self.altitude_assist_kd = float(rospy.get_param("~altitude_assist_kd", 6.0))
-        self.altitude_assist_ki = float(rospy.get_param("~altitude_assist_ki", 1.2))
+        self.altitude_assist_kp = float(rospy.get_param("~altitude_assist_kp", 10.0))
         self.altitude_assist_max_delta_newton = float(
-            rospy.get_param("~altitude_assist_max_delta_newton", 14.0)
-        )
-        self.altitude_assist_integral_max_delta_newton = float(
-            rospy.get_param("~altitude_assist_integral_max_delta_newton", 3.0)
+            rospy.get_param("~altitude_assist_max_delta_newton", 15.0)
         )
         self.takeoff_altitude_error_threshold_m = float(
             rospy.get_param("~takeoff_altitude_error_threshold_m", 0.2)
@@ -88,29 +83,21 @@ class KoopmanMpcRosNode:
         self.takeoff_vertical_speed_threshold_mps = float(
             rospy.get_param("~takeoff_vertical_speed_threshold_mps", 0.5)
         )
-        self.takeoff_boost_end_fraction = float(
-            rospy.get_param("~takeoff_boost_end_fraction", 0.65)
-        )
         self.takeoff_min_thrust_newton = float(
             rospy.get_param(
                 "~takeoff_min_thrust_newton",
-                max(float(self.controller.params["mass"]) * 9.81 + 1.5, 19.0),
+                max(float(self.controller.params["mass"]) * 9.81 + 2.0, 20.0),
             )
         )
         self.command_thrust_max_newton = float(
-            rospy.get_param("~command_thrust_max_newton", 22.0)
+            rospy.get_param("~command_thrust_max_newton", 25.0)
         )
-        self.command_thrust_slew_rate_newton_per_s = float(
-            rospy.get_param("~command_thrust_slew_rate_newton_per_s", 30.0)
-        )
-        self.hover_xy_position_kp = float(rospy.get_param("~hover_xy_position_kp", 0.08))
-        self.hover_xy_velocity_kd = float(rospy.get_param("~hover_xy_velocity_kd", 0.65))
-        self.hover_xy_command_blend = float(rospy.get_param("~hover_xy_command_blend", 0.05))
+        self.hover_xy_position_kp = float(rospy.get_param("~hover_xy_position_kp", 0.20))
+        self.hover_xy_velocity_kd = float(rospy.get_param("~hover_xy_velocity_kd", 0.35))
+        self.hover_xy_command_blend = float(rospy.get_param("~hover_xy_command_blend", 0.15))
         self.hover_xy_max_roll_pitch_rad = float(
-            rospy.get_param("~hover_xy_max_roll_pitch_rad", 0.10)
+            rospy.get_param("~hover_xy_max_roll_pitch_rad", 0.18)
         )
-        self.altitude_error_integral = 0.0
-        self.last_thrust_newton: float | None = None
         self.reference: PoseReference | None = None
         self.current_state: np.ndarray | None = None
 
@@ -162,7 +149,6 @@ class KoopmanMpcRosNode:
     def _handle_pose(self, msg) -> None:
         quaternion = msg.pose.orientation
         yaw = _yaw_from_quaternion_xyzw(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
-        self.altitude_error_integral = 0.0
         self.reference = PoseReference(
             position_xyz=np.array(
                 [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z],
@@ -177,7 +163,6 @@ class KoopmanMpcRosNode:
         transform = msg.points[0].transforms[0]
         quaternion = transform.rotation
         yaw = _yaw_from_quaternion_xyzw(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
-        self.altitude_error_integral = 0.0
         self.reference = PoseReference(
             position_xyz=np.array(
                 [transform.translation.x, transform.translation.y, transform.translation.z],
@@ -222,43 +207,20 @@ class KoopmanMpcRosNode:
                 self.hover_xy_max_roll_pitch_rad,
             )
         )
-        dt = self.controller.config.control_time_step
-        self.altitude_error_integral = float(
-            np.clip(
-                self.altitude_error_integral + z_error * dt,
-                -self.altitude_assist_integral_max_delta_newton / max(self.altitude_assist_ki, 1e-6),
-                self.altitude_assist_integral_max_delta_newton / max(self.altitude_assist_ki, 1e-6),
-            )
-        )
         thrust_assist = float(
             np.clip(
-                self.altitude_assist_kp * z_error
-                - self.altitude_assist_kd * z_velocity
-                + self.altitude_assist_ki * self.altitude_error_integral,
-                -self.altitude_assist_max_delta_newton,
+                self.altitude_assist_kp * max(z_error, 0.0),
+                0.0,
                 self.altitude_assist_max_delta_newton,
             )
         )
         thrust_newton = command.thrust_newton + thrust_assist
         if (
             z_error >= self.takeoff_altitude_error_threshold_m
-            and position[2] <= self.reference.position_xyz[2] * self.takeoff_boost_end_fraction
             and z_velocity <= self.takeoff_vertical_speed_threshold_mps
         ):
             thrust_newton = max(thrust_newton, self.takeoff_min_thrust_newton)
         thrust_newton = float(np.clip(thrust_newton, 0.0, self.command_thrust_max_newton))
-        if self.last_thrust_newton is None:
-            self.last_thrust_newton = thrust_newton
-        else:
-            max_thrust_step_newton = self.command_thrust_slew_rate_newton_per_s * dt
-            thrust_newton = float(
-                np.clip(
-                    thrust_newton,
-                    self.last_thrust_newton - max_thrust_step_newton,
-                    self.last_thrust_newton + max_thrust_step_newton,
-                )
-            )
-            self.last_thrust_newton = thrust_newton
         roll_rad = float(
             np.clip(
                 self.hover_xy_command_blend * command.roll_rad
@@ -307,7 +269,6 @@ class KoopmanMpcRosNode:
             float(step.solve_time_ms),
             float(step.solve_iterations),
             1.0 if step.solve_converged else 0.0,
-            float(self.altitude_error_integral),
         ]
         self.raw_control_pub.publish(raw)
 
