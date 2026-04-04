@@ -182,6 +182,27 @@ def test_compute_runtime_health_summary_classifies_timing_collapse_run(tmp_path:
     assert "sample_count" in str(summary["runtime_failure_reason"])
 
 
+def test_compute_runtime_health_summary_scales_sample_thresholds_with_5s_reference(tmp_path: Path):
+    run_dir = tmp_path / "4-3-26_5s_light"
+    run_dir.mkdir(parents=True)
+    samples = 251
+    _write_runtime_log(
+        run_dir / "runtime_log.csv",
+        [0.74 for _ in range(samples)],
+        [0.001 * step for step in range(samples)],
+        [0.02 for _ in range(samples)],
+        11.0,
+        20.0,
+        experiment_dt_s=0.02,
+    )
+    _write_run_metadata(run_dir / "run_metadata.json", control_rate_hz=50.0, pred_horizon=8, reference_duration_s=5.0)
+
+    summary = compute_runtime_health_summary(run_dir / "runtime_log.csv")
+
+    assert summary["runtime_validity"] == "valid_runtime"
+    assert summary["sample_count"] == samples
+
+
 def test_evaluate_hover_gates_reports_standard_profile_pass(tmp_path: Path):
     run_dir = tmp_path / "4-1-26_1540"
     run_dir.mkdir(parents=True)
@@ -335,3 +356,32 @@ def test_evaluate_hover_gates_stops_before_control_quality_when_runtime_is_inval
     assert evaluation["checks"]["runtime_validity"] is False
     assert evaluation["diagnostic_branch"] is None
     assert evaluation["control_audit_mapping_status"] is None
+
+
+def test_evaluate_hover_gates_scales_light_anchor_confirmation_for_5s_runs(tmp_path: Path):
+    run_dir = tmp_path / "4-3-26_5s_light_gate"
+    run_dir.mkdir(parents=True)
+    samples = 251
+    z_values = [0.74 + 0.0001 * min(step, 10) for step in range(samples)]
+    x_values = [0.0006 * step for step in range(samples)]
+    u2_values = [0.02 for _ in range(samples)]
+    _write_runtime_log(
+        run_dir / "runtime_log.csv",
+        z_values,
+        x_values,
+        u2_values,
+        11.5,
+        20.0,
+        experiment_dt_s=0.02,
+    )
+    _write_run_metadata(run_dir / "run_metadata.json", control_rate_hz=50.0, pred_horizon=8, reference_duration_s=5.0)
+    _write_drift_summary(run_dir / "drift_summary.json", divergence_time_s=5.0)
+    _write_control_audit_summary(run_dir / "control_audit_summary.json", u2_first_used_mismatch_time_s=4.2)
+
+    evaluation = evaluate_hover_gates(run_dir / "runtime_log.csv", profile="light_anchor_confirmation")
+
+    assert evaluation["passed"] is True
+    assert evaluation["runtime_validity"] == "valid_runtime"
+    assert evaluation["controller_quality_evaluated"] is True
+    assert evaluation["metrics"]["sample_count"] == samples
+    assert evaluation["checks"]["u2_first_used_mismatch_time_s"] is True

@@ -29,7 +29,7 @@ from .sitl_drift_analysis import (
 from .sitl_runtime_metrics import load_control_audit_summary, load_runtime_health_summary
 
 
-U2_LATE_SIGN_INSTABILITY_FIRST_MISMATCH_MAX_S = 8.0
+U2_LATE_SIGN_INSTABILITY_FIRST_MISMATCH_FRACTION_OF_DURATION = 0.8
 U2_LATE_SIGN_INSTABILITY_LATE_SIGN_MATCH_MAX = 0.75
 U2_UNDERCORRECTION_PRE_SIGN_MIN = 0.85
 U2_UNDERCORRECTION_LATE_SIGN_MIN = 0.75
@@ -83,6 +83,7 @@ def _total_group_error(group_errors: dict[str, float]) -> float:
 def _classify_u2_root_cause(
     runtime_validity: str | None,
     *,
+    reference_duration_s: float,
     u2_first_raw_mismatch_time_s: float | None,
     u2_late_window_raw_sign_match: float | None,
     u2_late_window_raw_magnitude_ratio: float | None,
@@ -94,9 +95,13 @@ def _classify_u2_root_cause(
     if runtime_validity != "valid_runtime":
         return "runtime_invalid"
 
+    late_sign_instability_first_mismatch_max_s = (
+        U2_LATE_SIGN_INSTABILITY_FIRST_MISMATCH_FRACTION_OF_DURATION * max(float(reference_duration_s), 1.0e-9)
+    )
+
     if (
         u2_first_raw_mismatch_time_s is not None
-        and u2_first_raw_mismatch_time_s < U2_LATE_SIGN_INSTABILITY_FIRST_MISMATCH_MAX_S
+        and u2_first_raw_mismatch_time_s < late_sign_instability_first_mismatch_max_s
         and u2_late_window_raw_sign_match is not None
         and u2_late_window_raw_sign_match < U2_LATE_SIGN_INSTABILITY_LATE_SIGN_MATCH_MAX
     ):
@@ -122,7 +127,7 @@ def _classify_u2_root_cause(
         and (
             (
                 u2_first_raw_mismatch_time_s is not None
-                and u2_first_raw_mismatch_time_s < U2_LATE_SIGN_INSTABILITY_FIRST_MISMATCH_MAX_S
+                and u2_first_raw_mismatch_time_s < late_sign_instability_first_mismatch_max_s
             )
             or (
                 u2_late_window_lateral_position_residual_norm is not None
@@ -149,6 +154,7 @@ def analyze_runtime_u2_root_cause(
     run = load_sitl_run_dataset(resolved_log_path, state_source="used", control_source="used")
     model, artifact_metadata = load_edmd_artifact(artifact_path)
     runtime_health_summary = load_runtime_health_summary(resolved_log_path)
+    reference_duration_s = float(runtime_health_summary.get("reference_duration_s", float(run.experiment_time_s[-1])) or float(run.experiment_time_s[-1]))
     drift_summary = _load_or_generate_drift_summary(resolved_log_path, artifact_path, output_root)
     control_summary = load_control_audit_summary(resolved_log_path)
     if control_summary is None:
@@ -296,6 +302,7 @@ def analyze_runtime_u2_root_cause(
 
     u2_root_cause_classification = _classify_u2_root_cause(
         runtime_health_summary.get("runtime_validity"),
+        reference_duration_s=reference_duration_s,
         u2_first_raw_mismatch_time_s=raw_mismatch_time,
         u2_late_window_raw_sign_match=(
             None if control_summary is None else control_summary.get("u2_late_window_mean_raw_sign_match")

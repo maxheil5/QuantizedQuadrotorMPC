@@ -24,21 +24,21 @@ def _percentile(values: np.ndarray, percentile: float) -> float:
 
 
 def _runtime_thresholds(control_rate_hz: float, reference_duration_s: float) -> dict[str, float]:
+    target_samples = max(reference_duration_s * control_rate_hz, 1.0)
     if control_rate_hz >= 90.0:
         return {
-            "sample_count_min": 850.0,
+            "sample_count_min": float(np.floor(0.85 * target_samples)),
             "effective_control_rate_hz_min": 85.0,
             "tick_dt_ms_p90_max": 14.0,
             "solver_ms_p90_max": 10.0,
         }
     if control_rate_hz >= 45.0:
         return {
-            "sample_count_min": 440.0,
+            "sample_count_min": float(np.floor(0.88 * target_samples)),
             "effective_control_rate_hz_min": 45.0,
             "tick_dt_ms_p90_max": 25.0,
             "solver_ms_p90_max": 18.0,
         }
-    target_samples = max(reference_duration_s * control_rate_hz, 1.0)
     target_period_ms = 1000.0 / max(control_rate_hz, 1.0)
     return {
         "sample_count_min": float(np.floor(0.85 * target_samples)),

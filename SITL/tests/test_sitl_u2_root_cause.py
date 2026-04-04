@@ -258,6 +258,48 @@ def test_analyze_runtime_u2_root_cause_classifies_inconclusive_good_run(tmp_path
     assert summary["u2_root_cause_classification"] == "inconclusive"
 
 
+def test_analyze_runtime_u2_root_cause_scales_first_mismatch_threshold_for_5s_runs(tmp_path: Path):
+    run_dir = tmp_path / "results" / "sitl" / "4-3-26_bad_5s"
+    run_dir.mkdir(parents=True)
+    artifact_path = tmp_path / "results" / "offline" / "test" / "edmd_unquantized.npz"
+    artifact_path.parent.mkdir(parents=True)
+    _write_artifact(artifact_path)
+    _write_runtime_log(
+        run_dir / "runtime_log.csv",
+        x_positions=[0.0, 0.1, 0.2, 0.4, 0.6],
+        z_positions=[0.75, 0.80, 0.88, 0.95, 1.05],
+        raw_u2=[0.02, 0.02, 0.08, 0.10, 0.12],
+        used_u2=[0.02, 0.02, 0.09, 0.11, 0.13],
+    )
+    _write_run_metadata(run_dir / "run_metadata.json", str(artifact_path))
+    metadata = json.loads((run_dir / "run_metadata.json").read_text(encoding="utf-8"))
+    metadata["reference_duration_s"] = 5.0
+    (run_dir / "run_metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    _write_runtime_health(run_dir / "runtime_health_summary.json", runtime_validity="valid_runtime")
+    runtime_health = json.loads((run_dir / "runtime_health_summary.json").read_text(encoding="utf-8"))
+    runtime_health["reference_duration_s"] = 5.0
+    (run_dir / "runtime_health_summary.json").write_text(json.dumps(runtime_health, indent=2), encoding="utf-8")
+    _write_drift_summary(run_dir / "drift_summary.json", divergence_time_s=5.0)
+    _write_control_audit_summary(
+        run_dir / "control_audit_summary.json",
+        u2_first_raw_mismatch_time_s=3.0,
+        u2_first_used_mismatch_time_s=3.0,
+        raw_pre_sign=0.86,
+        used_pre_sign=0.91,
+        raw_late_sign=0.50,
+        used_late_sign=0.62,
+        raw_late_mag=0.66,
+        used_late_mag=0.72,
+        late_pos_norm=0.70,
+        late_vel_norm=0.55,
+    )
+
+    summary = analyze_runtime_u2_root_cause(run_dir / "runtime_log.csv", artifact_path)
+
+    assert summary["runtime_validity"] == "valid_runtime"
+    assert summary["u2_root_cause_classification"] == "raw_u2_late_sign_instability"
+
+
 def test_analyze_runtime_u2_root_cause_short_circuits_invalid_runtime(tmp_path: Path):
     run_dir = tmp_path / "results" / "sitl" / "4-3-26_invalid"
     run_dir.mkdir(parents=True)

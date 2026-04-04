@@ -61,6 +61,11 @@ HOVER_GATE_PROFILES: dict[str, dict[str, float]] = {
 }
 
 
+def _scale_threshold_for_reference_duration(base_value: float, reference_duration_s: float, *, base_duration_s: float = 10.0) -> float:
+    duration = max(float(reference_duration_s), 1.0e-9)
+    return float(base_value) * (duration / base_duration_s)
+
+
 def _column_history(rows: list[dict[str, str]], prefix: str, width: int) -> np.ndarray:
     return np.asarray(
         [[float(row[f"{prefix}_{idx}"]) for row in rows] for idx in range(width)],
@@ -172,12 +177,17 @@ def evaluate_hover_gates(
     thresholds = HOVER_GATE_PROFILES[profile]
     metrics = compute_hover_gate_metrics(log_path)
     runtime_health_summary = load_runtime_health_summary(log_path, runtime_health_summary_path)
+    reference_duration_s = float(runtime_health_summary.get("reference_duration_s", metrics["final_time_s"]) or metrics["final_time_s"])
     drift_summary = load_drift_summary(log_path, drift_summary_path)
     control_audit_summary = load_control_audit_summary(log_path, control_audit_summary_path)
     checks: dict[str, bool] = {}
     runtime_checks: dict[str, bool] = {}
     if "runtime_sample_count_min" in thresholds:
-        runtime_checks["runtime_sample_count"] = float(runtime_health_summary["sample_count"]) >= thresholds["runtime_sample_count_min"]
+        runtime_sample_count_min = _scale_threshold_for_reference_duration(
+            thresholds["runtime_sample_count_min"],
+            reference_duration_s,
+        )
+        runtime_checks["runtime_sample_count"] = float(runtime_health_summary["sample_count"]) >= runtime_sample_count_min
     if "runtime_effective_control_rate_hz_min" in thresholds:
         runtime_checks["runtime_effective_control_rate_hz"] = (
             float(runtime_health_summary["effective_control_rate_hz"]) >= thresholds["runtime_effective_control_rate_hz_min"]
@@ -251,7 +261,13 @@ def evaluate_hover_gates(
                     checks[f"early_window_rmse_ratio_{key}"] = float(early_ratios[key]) <= thresholds[threshold_key]
     if control_audit_summary is not None and "u2_first_used_mismatch_min_s" in thresholds:
         mismatch_time = control_audit_summary.get("u2_first_used_mismatch_time_s")
-        checks["u2_first_used_mismatch_time_s"] = mismatch_time is None or float(mismatch_time) >= thresholds["u2_first_used_mismatch_min_s"]
+        scaled_u2_first_used_mismatch_min_s = _scale_threshold_for_reference_duration(
+            thresholds["u2_first_used_mismatch_min_s"],
+            reference_duration_s,
+        )
+        checks["u2_first_used_mismatch_time_s"] = (
+            mismatch_time is None or float(mismatch_time) >= scaled_u2_first_used_mismatch_min_s
+        )
     return {
         "profile": profile,
         "passed": bool(all(checks.values())),
