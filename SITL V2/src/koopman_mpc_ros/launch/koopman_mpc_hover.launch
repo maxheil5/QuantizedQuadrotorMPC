@@ -2,23 +2,26 @@
   <arg name="model_path" default="" />
   <arg name="publish_rate_hz" default="100.0" />
   <arg name="pred_horizon" default="10" />
-  <arg name="qp_max_iter" default="100" />
+  <arg name="qp_max_iter" default="300" />
+  <arg name="qp_tol" default="1e-4" />
   <arg name="parameter_profile" default="rotors_firefly_linear_mpc_runtime" />
   <arg name="odometry_topic" default="odometry" />
   <arg name="pose_topic" default="command/pose" />
   <arg name="trajectory_topic" default="command/trajectory" />
-  <arg name="altitude_assist_kp" default="10.0" />
-  <arg name="altitude_assist_max_delta_newton" default="15.0" />
+  <arg name="use_hybrid_vertical_controller" default="true" />
+  <arg name="hybrid_vertical_learned_thrust_blend" default="0.0" />
+  <arg name="hover_vertical_position_kp" default="10.0" />
+  <arg name="hover_vertical_position_max_delta_newton" default="15.0" />
   <arg name="takeoff_altitude_error_threshold_m" default="0.2" />
   <arg name="takeoff_boost_full_error_m" default="0.5" />
   <arg name="takeoff_vertical_speed_threshold_mps" default="0.5" />
   <arg name="takeoff_min_thrust_newton" default="20.0" />
   <arg name="command_thrust_max_newton" default="25.0" />
-  <arg name="hover_altitude_trim_ki" default="0.8" />
+  <arg name="hover_altitude_trim_ki" default="0.5" />
   <arg name="hover_altitude_trim_max_newton" default="2.5" />
-  <arg name="hover_altitude_trim_start_height_fraction" default="0.5" />
-  <arg name="hover_vertical_damping_kd" default="3.0" />
-  <arg name="hover_vertical_damping_start_error_m" default="0.35" />
+  <arg name="hover_altitude_trim_enable_error_m" default="0.4" />
+  <arg name="hover_altitude_trim_decay_per_s" default="0.35" />
+  <arg name="hover_vertical_velocity_kd" default="3.5" />
   <arg name="hover_xy_position_kp" default="0.20" />
   <arg name="hover_xy_velocity_kd" default="0.35" />
   <arg name="hover_xy_command_blend" default="0.15" />
@@ -29,9 +32,12 @@
     <param name="publish_rate_hz" value="$(arg publish_rate_hz)" />
     <param name="pred_horizon" value="$(arg pred_horizon)" />
     <param name="qp_max_iter" value="$(arg qp_max_iter)" />
+    <param name="qp_tol" value="$(arg qp_tol)" />
     <param name="parameter_profile" value="$(arg parameter_profile)" />
-    <param name="altitude_assist_kp" value="$(arg altitude_assist_kp)" />
-    <param name="altitude_assist_max_delta_newton" value="$(arg altitude_assist_max_delta_newton)" />
+    <param name="use_hybrid_vertical_controller" value="$(arg use_hybrid_vertical_controller)" />
+    <param name="hybrid_vertical_learned_thrust_blend" value="$(arg hybrid_vertical_learned_thrust_blend)" />
+    <param name="hover_vertical_position_kp" value="$(arg hover_vertical_position_kp)" />
+    <param name="hover_vertical_position_max_delta_newton" value="$(arg hover_vertical_position_max_delta_newton)" />
     <param name="takeoff_altitude_error_threshold_m" value="$(arg takeoff_altitude_error_threshold_m)" />
     <param name="takeoff_boost_full_error_m" value="$(arg takeoff_boost_full_error_m)" />
     <param name="takeoff_vertical_speed_threshold_mps" value="$(arg takeoff_vertical_speed_threshold_mps)" />
@@ -39,9 +45,9 @@
     <param name="command_thrust_max_newton" value="$(arg command_thrust_max_newton)" />
     <param name="hover_altitude_trim_ki" value="$(arg hover_altitude_trim_ki)" />
     <param name="hover_altitude_trim_max_newton" value="$(arg hover_altitude_trim_max_newton)" />
-    <param name="hover_altitude_trim_start_height_fraction" value="$(arg hover_altitude_trim_start_height_fraction)" />
-    <param name="hover_vertical_damping_kd" value="$(arg hover_vertical_damping_kd)" />
-    <param name="hover_vertical_damping_start_error_m" value="$(arg hover_vertical_damping_start_error_m)" />
+    <param name="hover_altitude_trim_enable_error_m" value="$(arg hover_altitude_trim_enable_error_m)" />
+    <param name="hover_altitude_trim_decay_per_s" value="$(arg hover_altitude_trim_decay_per_s)" />
+    <param name="hover_vertical_velocity_kd" value="$(arg hover_vertical_velocity_kd)" />
     <param name="hover_xy_position_kp" value="$(arg hover_xy_position_kp)" />
     <param name="hover_xy_velocity_kd" value="$(arg hover_xy_velocity_kd)" />
     <param name="hover_xy_command_blend" value="$(arg hover_xy_command_blend)" />

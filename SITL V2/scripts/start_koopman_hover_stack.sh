@@ -8,6 +8,8 @@ WORKSPACE_ROOT="${1:-$(cd "${REPO_ROOT}/.." && pwd)}"
 MODEL_PATH="${2:-}"
 LOWLEVEL_PKG_ROOT="${WORKSPACE_ROOT}/src/mav_control_rw/mav_lowlevel_attitude_controller"
 KOOPMAN_QP_MAX_ITER="${KOOPMAN_QP_MAX_ITER:-300}"
+KOOPMAN_QP_TOL="${KOOPMAN_QP_TOL:-1e-4}"
+KOOPMAN_USE_HYBRID_VERTICAL_CONTROLLER="${KOOPMAN_USE_HYBRID_VERTICAL_CONTROLLER:-true}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_DIR="${V2_ROOT}/results/runtime_logs/koopman_hover/${STAMP}"
 PID_FILE="${RUN_DIR}/pids.env"
@@ -177,7 +179,7 @@ wait_for_success "rostopic list | grep -q '^/firefly/ground_truth/odometry$'" "g
 stop_existing_node_if_running "/firefly/koopman_mpc_node" "koopman_mpc_node.py"
 
 echo "Starting learned hover node."
-nohup env ROS_NAMESPACE=firefly rosrun koopman_mpc_ros koopman_mpc_node.py __name:=koopman_mpc_node "_model_path:=${MODEL_PATH}" _parameter_profile:=rotors_firefly_linear_mpc_runtime _pred_horizon:=10 "_qp_max_iter:=${KOOPMAN_QP_MAX_ITER}" odometry:=ground_truth/odometry > "${RUN_DIR}/koopman_mpc_node.log" 2>&1 &
+nohup env ROS_NAMESPACE=firefly rosrun koopman_mpc_ros koopman_mpc_node.py __name:=koopman_mpc_node "_model_path:=${MODEL_PATH}" _parameter_profile:=rotors_firefly_linear_mpc_runtime _pred_horizon:=10 "_qp_max_iter:=${KOOPMAN_QP_MAX_ITER}" "_qp_tol:=${KOOPMAN_QP_TOL}" "_use_hybrid_vertical_controller:=${KOOPMAN_USE_HYBRID_VERTICAL_CONTROLLER}" odometry:=ground_truth/odometry > "${RUN_DIR}/koopman_mpc_node.log" 2>&1 &
 koopman_pid="$!"
 koopman_started_by_script=1
 if ! wait_for_success "rosnode list | grep -q '^/firefly/koopman_mpc_node$'" "koopman_mpc_node"; then
@@ -206,6 +208,8 @@ fi
   echo "workspace_root='${WORKSPACE_ROOT}'"
   echo "model_path='${MODEL_PATH}'"
   echo "koopman_qp_max_iter='${KOOPMAN_QP_MAX_ITER}'"
+  echo "koopman_qp_tol='${KOOPMAN_QP_TOL}'"
+  echo "koopman_use_hybrid_vertical_controller='${KOOPMAN_USE_HYBRID_VERTICAL_CONTROLLER}'"
   echo "master_started_by_script='${master_started_by_script}'"
   echo "gazebo_started_by_script='${gazebo_started_by_script}'"
   echo "koopman_started_by_script='${koopman_started_by_script}'"
@@ -229,6 +233,8 @@ Hover command:
 
 Online MPC settings:
   KOOPMAN_QP_MAX_ITER=${KOOPMAN_QP_MAX_ITER}
+  KOOPMAN_QP_TOL=${KOOPMAN_QP_TOL}
+  KOOPMAN_USE_HYBRID_VERTICAL_CONTROLLER=${KOOPMAN_USE_HYBRID_VERTICAL_CONTROLLER}
 
 Raw output check:
   rostopic echo -n 5 /firefly/command/raw_body_wrench

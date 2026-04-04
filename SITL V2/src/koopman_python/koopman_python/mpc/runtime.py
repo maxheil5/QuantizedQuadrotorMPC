@@ -23,7 +23,7 @@ class LearnedMpcRuntimeConfig:
     control_lower_bound: float = -50.0
     control_upper_bound: float = 50.0
     qp_max_iter: int = 100
-    qp_tol: float = 1e-8
+    qp_tol: float = 1e-4
     parameter_profile: str = DEFAULT_PROFILE
     control_time_step: float = 1e-2
     max_roll_pitch_rad: float = 0.35
@@ -37,6 +37,8 @@ class LearnedMpcStepResult:
     solve_time_ms: float
     solve_iterations: int
     solve_converged: bool
+    solve_projected_step_inf_norm: float
+    solve_hit_iteration_cap: bool
     qp_objective_value: float
 
 
@@ -133,6 +135,8 @@ class LearnedMpcController:
             solve_time_ms=solve_time_ms,
             solve_iterations=solve_result.iterations,
             solve_converged=solve_result.converged,
+            solve_projected_step_inf_norm=solve_result.projected_step_inf_norm,
+            solve_hit_iteration_cap=solve_result.hit_iteration_cap,
             qp_objective_value=objective,
         )
 

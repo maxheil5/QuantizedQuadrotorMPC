@@ -288,6 +288,9 @@ def run_offline_learned_mpc_experiment(
         "solve_iterations_mean": float(np.mean(mpc_result.solve_iterations)),
         "solve_iterations_max": int(np.max(mpc_result.solve_iterations)),
         "solve_converged_fraction": float(np.mean(mpc_result.solve_converged.astype(float))),
+        "solve_projected_step_inf_norm_mean": float(np.mean(mpc_result.solve_projected_step_inf_norms)),
+        "solve_projected_step_inf_norm_max": float(np.max(mpc_result.solve_projected_step_inf_norms)),
+        "solve_hit_iteration_cap_fraction": float(np.mean(mpc_result.solve_hit_iteration_cap.astype(float))),
         "A_shape": list(model.A.shape),
         "B_shape": list(model.B.shape),
         "C_shape": list(model.C.shape),
@@ -345,6 +348,8 @@ def run_offline_learned_mpc_experiment(
         solve_times_ms=mpc_result.solve_times_ms,
         solve_iterations=mpc_result.solve_iterations,
         solve_converged=mpc_result.solve_converged,
+        solve_projected_step_inf_norms=mpc_result.solve_projected_step_inf_norms,
+        solve_hit_iteration_cap=mpc_result.solve_hit_iteration_cap,
     )
 
     trajectory_rows = _trajectory_rows(mpc_result.t, actual_states, tracked_reference_states)
@@ -360,10 +365,24 @@ def run_offline_learned_mpc_experiment(
             "solve_time_ms": float(mpc_result.solve_times_ms[i]),
             "solve_iterations": int(mpc_result.solve_iterations[i]),
             "solve_converged": bool(mpc_result.solve_converged[i]),
+            "solve_projected_step_inf_norm": float(mpc_result.solve_projected_step_inf_norms[i]),
+            "solve_hit_iteration_cap": bool(mpc_result.solve_hit_iteration_cap[i]),
         }
         for i in range(mpc_result.solve_times_ms.size)
     ]
-    _write_csv(run_dir / "timing.csv", ["step_index", "t_s", "solve_time_ms", "solve_iterations", "solve_converged"], timing_rows)
+    _write_csv(
+        run_dir / "timing.csv",
+        [
+            "step_index",
+            "t_s",
+            "solve_time_ms",
+            "solve_iterations",
+            "solve_converged",
+            "solve_projected_step_inf_norm",
+            "solve_hit_iteration_cap",
+        ],
+        timing_rows,
+    )
 
     generate_offline_learned_mpc_figures(
         figure_dir,
@@ -438,6 +457,9 @@ def run_offline_learned_mpc_experiment(
         {"run_id": run_id, "metric_name": "solve_iterations_mean", "metric_value": float(np.mean(mpc_result.solve_iterations)), "units": "iterations"},
         {"run_id": run_id, "metric_name": "solve_iterations_max", "metric_value": int(np.max(mpc_result.solve_iterations)), "units": "iterations"},
         {"run_id": run_id, "metric_name": "solve_converged_fraction", "metric_value": float(np.mean(mpc_result.solve_converged.astype(float))), "units": "fraction"},
+        {"run_id": run_id, "metric_name": "solve_projected_step_inf_norm_mean", "metric_value": float(np.mean(mpc_result.solve_projected_step_inf_norms)), "units": "norm"},
+        {"run_id": run_id, "metric_name": "solve_projected_step_inf_norm_max", "metric_value": float(np.max(mpc_result.solve_projected_step_inf_norms)), "units": "norm"},
+        {"run_id": run_id, "metric_name": "solve_hit_iteration_cap_fraction", "metric_value": float(np.mean(mpc_result.solve_hit_iteration_cap.astype(float))), "units": "fraction"},
     ]
     for row in metric_rows:
         _append_csv_row(

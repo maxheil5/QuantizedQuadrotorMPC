@@ -63,6 +63,8 @@ class QpSolveResult:
     solution: np.ndarray
     iterations: int
     converged: bool
+    projected_step_inf_norm: float
+    hit_iteration_cap: bool
 
 
 def default_mpc_weights() -> MpcWeights:
@@ -269,13 +271,21 @@ def solve_box_qp(
 
     converged = False
     iterations = max_iter
+    projected_step_inf_norm = float("inf")
     for iteration in range(1, max_iter + 1):
         grad = G @ u + F
         candidate = np.clip(u - step * grad, lower, upper)
-        if np.linalg.norm(candidate - u, ord=np.inf) <= tol:
+        projected_step_inf_norm = float(np.linalg.norm(candidate - u, ord=np.inf))
+        if projected_step_inf_norm <= tol:
             u = candidate
             converged = True
             iterations = iteration
             break
         u = candidate
-    return QpSolveResult(solution=u, iterations=iterations, converged=converged)
+    return QpSolveResult(
+        solution=u,
+        iterations=iterations,
+        converged=converged,
+        projected_step_inf_norm=projected_step_inf_norm,
+        hit_iteration_cap=not converged and iterations >= max_iter,
+    )

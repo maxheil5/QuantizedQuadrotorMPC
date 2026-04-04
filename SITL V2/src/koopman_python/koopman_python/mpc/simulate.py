@@ -40,6 +40,8 @@ class MpcSimulationResult:
     solve_times_ms: np.ndarray
     solve_iterations: np.ndarray
     solve_converged: np.ndarray
+    solve_projected_step_inf_norms: np.ndarray
+    solve_hit_iteration_cap: np.ndarray
 
 
 def observed_state_to_full_state(observed: np.ndarray) -> np.ndarray:
@@ -90,6 +92,8 @@ def simulate_closed_loop(
     solve_times_ms = []
     solve_iterations = []
     solve_converged = []
+    solve_projected_step_inf_norms = []
+    solve_hit_iteration_cap = []
 
     qp_structure = build_qp_structure(
         model=model,
@@ -118,6 +122,8 @@ def simulate_closed_loop(
         solve_times_ms.append((time.perf_counter() - solve_start) * 1000.0)
         solve_iterations.append(solve_result.iterations)
         solve_converged.append(solve_result.converged)
+        solve_projected_step_inf_norms.append(solve_result.projected_step_inf_norm)
+        solve_hit_iteration_cap.append(solve_result.hit_iteration_cap)
         zval = solve_result.solution
         warm_start = shift_warm_start(zval, qp_structure.control_dim)
         Ut = zval[:4]
@@ -150,4 +156,6 @@ def simulate_closed_loop(
         solve_times_ms=np.asarray(solve_times_ms, dtype=float),
         solve_iterations=np.asarray(solve_iterations, dtype=int),
         solve_converged=np.asarray(solve_converged, dtype=bool),
+        solve_projected_step_inf_norms=np.asarray(solve_projected_step_inf_norms, dtype=float),
+        solve_hit_iteration_cap=np.asarray(solve_hit_iteration_cap, dtype=bool),
     )

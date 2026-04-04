@@ -250,6 +250,8 @@ def run_offline_quantized_experiment(
     solve_time_trajectories = []
     solve_iteration_trajectories = []
     solve_converged_trajectories = []
+    solve_projected_step_inf_norm_trajectories = []
+    solve_hit_iteration_cap_trajectories = []
     tracked_reference_template = None
     time_template = None
     successful_realizations = 0
@@ -320,6 +322,9 @@ def run_offline_quantized_experiment(
             "solve_iterations_mean": float(np.mean(mpc_result.solve_iterations)),
             "solve_iterations_max": float(np.max(mpc_result.solve_iterations)),
             "solve_converged_fraction": float(np.mean(mpc_result.solve_converged.astype(float))),
+            "solve_projected_step_inf_norm_mean": float(np.mean(mpc_result.solve_projected_step_inf_norms)),
+            "solve_projected_step_inf_norm_max": float(np.max(mpc_result.solve_projected_step_inf_norms)),
+            "solve_hit_iteration_cap_fraction": float(np.mean(mpc_result.solve_hit_iteration_cap.astype(float))),
         }
 
         prediction_metric_dicts.append(prediction_metrics)
@@ -331,6 +336,12 @@ def run_offline_quantized_experiment(
         solve_time_trajectories.append(np.asarray(mpc_result.solve_times_ms, dtype=float))
         solve_iteration_trajectories.append(np.asarray(mpc_result.solve_iterations, dtype=float))
         solve_converged_trajectories.append(np.asarray(mpc_result.solve_converged, dtype=float))
+        solve_projected_step_inf_norm_trajectories.append(
+            np.asarray(mpc_result.solve_projected_step_inf_norms, dtype=float)
+        )
+        solve_hit_iteration_cap_trajectories.append(
+            np.asarray(mpc_result.solve_hit_iteration_cap, dtype=float)
+        )
 
         trajectory_rows = []
         for step_index, t_s in enumerate(mpc_result.t):
@@ -352,6 +363,8 @@ def run_offline_quantized_experiment(
                 "solve_time_ms": float(mpc_result.solve_times_ms[step_index]),
                 "solve_iterations": int(mpc_result.solve_iterations[step_index]),
                 "solve_converged": bool(mpc_result.solve_converged[step_index]),
+                "solve_projected_step_inf_norm": float(mpc_result.solve_projected_step_inf_norms[step_index]),
+                "solve_hit_iteration_cap": bool(mpc_result.solve_hit_iteration_cap[step_index]),
             }
             for step_index in range(mpc_result.solve_times_ms.size)
         ]
@@ -370,7 +383,19 @@ def run_offline_quantized_experiment(
         _write_csv(realization_dir / "trajectory.csv", ["t_s", "x_ref", "y_ref", "z_ref", "x_mpc", "y_mpc", "z_mpc"], trajectory_rows)
         control_rows = _control_rows(mpc_result.t, mpc_result.U.T)
         _write_csv(realization_dir / "control.csv", list(control_rows[0].keys()), control_rows)
-        _write_csv(realization_dir / "timing.csv", ["step_index", "t_s", "solve_time_ms", "solve_iterations", "solve_converged"], timing_rows)
+        _write_csv(
+            realization_dir / "timing.csv",
+            [
+                "step_index",
+                "t_s",
+                "solve_time_ms",
+                "solve_iterations",
+                "solve_converged",
+                "solve_projected_step_inf_norm",
+                "solve_hit_iteration_cap",
+            ],
+            timing_rows,
+        )
         np.savez_compressed(
             realization_dir / "model.npz",
             K=quantized_model.K,
@@ -392,6 +417,8 @@ def run_offline_quantized_experiment(
             solve_times_ms=mpc_result.solve_times_ms,
             solve_iterations=mpc_result.solve_iterations,
             solve_converged=mpc_result.solve_converged,
+            solve_projected_step_inf_norms=mpc_result.solve_projected_step_inf_norms,
+            solve_hit_iteration_cap=mpc_result.solve_hit_iteration_cap,
         )
 
         realization_rows.append(
@@ -424,6 +451,8 @@ def run_offline_quantized_experiment(
     solve_time_stack = np.stack(solve_time_trajectories, axis=0)
     solve_iteration_stack = np.stack(solve_iteration_trajectories, axis=0)
     solve_converged_stack = np.stack(solve_converged_trajectories, axis=0)
+    solve_projected_step_inf_norm_stack = np.stack(solve_projected_step_inf_norm_trajectories, axis=0)
+    solve_hit_iteration_cap_stack = np.stack(solve_hit_iteration_cap_trajectories, axis=0)
     reference_positions = tracked_reference_template[0:3, :]
     actual_positions_mean = np.mean(actual_state_stack[:, 0:3, :], axis=0)
     actual_positions_std = np.std(actual_state_stack[:, 0:3, :], axis=0)
@@ -435,6 +464,9 @@ def run_offline_quantized_experiment(
     solve_iteration_mean_per_step = np.mean(solve_iteration_stack, axis=0)
     solve_iteration_max_per_step = np.max(solve_iteration_stack, axis=0)
     solve_converged_fraction_per_step = np.mean(solve_converged_stack, axis=0)
+    solve_projected_step_inf_norm_mean_per_step = np.mean(solve_projected_step_inf_norm_stack, axis=0)
+    solve_projected_step_inf_norm_max_per_step = np.max(solve_projected_step_inf_norm_stack, axis=0)
+    solve_hit_iteration_cap_fraction_per_step = np.mean(solve_hit_iteration_cap_stack, axis=0)
 
     metrics_payload = {
         "run_id": run_id,
@@ -560,6 +592,9 @@ def run_offline_quantized_experiment(
             "solve_iterations_mean": float(solve_iteration_mean_per_step[step_index]),
             "solve_iterations_max": float(solve_iteration_max_per_step[step_index]),
             "solve_converged_fraction": float(solve_converged_fraction_per_step[step_index]),
+            "solve_projected_step_inf_norm_mean": float(solve_projected_step_inf_norm_mean_per_step[step_index]),
+            "solve_projected_step_inf_norm_max": float(solve_projected_step_inf_norm_max_per_step[step_index]),
+            "solve_hit_iteration_cap_fraction": float(solve_hit_iteration_cap_fraction_per_step[step_index]),
         }
         for step_index in range(solve_time_mean_per_step.size)
     ]
@@ -573,6 +608,9 @@ def run_offline_quantized_experiment(
             "solve_iterations_mean",
             "solve_iterations_max",
             "solve_converged_fraction",
+            "solve_projected_step_inf_norm_mean",
+            "solve_projected_step_inf_norm_max",
+            "solve_hit_iteration_cap_fraction",
         ],
         aggregate_timing_rows,
     )
@@ -647,7 +685,7 @@ def run_offline_quantized_experiment(
     for key, value in matrix_mean.items():
         metric_rows.append({"run_id": run_id, "metric_name": key, "metric_value": value, "units": "fraction"})
     for key, value in solve_mean.items():
-        units = "ms" if "ms" in key else ("fraction" if "fraction" in key else "iterations")
+        units = "ms" if "ms" in key else ("fraction" if "fraction" in key else ("norm" if "norm" in key else "iterations"))
         metric_rows.append({"run_id": run_id, "metric_name": key, "metric_value": value, "units": units})
 
     for row in metric_rows:

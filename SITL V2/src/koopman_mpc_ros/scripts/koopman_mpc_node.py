@@ -36,6 +36,14 @@ def _yaw_from_quaternion_xyzw(x: float, y: float, z: float, w: float) -> float:
     return float(math.atan2(siny_cosp, cosy_cosp))
 
 
+def _param_as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 @dataclass
 class PoseReference:
     position_xyz: np.ndarray
@@ -64,7 +72,7 @@ class KoopmanMpcRosNode:
             control_lower_bound=float(rospy.get_param("~control_lower_bound", -50.0)),
             control_upper_bound=float(rospy.get_param("~control_upper_bound", 50.0)),
             qp_max_iter=int(rospy.get_param("~qp_max_iter", 100)),
-            qp_tol=float(rospy.get_param("~qp_tol", 1e-8)),
+            qp_tol=float(rospy.get_param("~qp_tol", 1e-4)),
             parameter_profile=str(rospy.get_param("~parameter_profile", "rotors_firefly_linear_mpc_runtime")),
             control_time_step=float(rospy.get_param("~control_time_step", 0.01)),
             max_roll_pitch_rad=float(rospy.get_param("~max_roll_pitch_rad", 0.35)),
@@ -74,9 +82,20 @@ class KoopmanMpcRosNode:
             config=runtime_config,
         )
         self.hover_thrust_newton = float(self.controller.params["mass"]) * 9.81
-        self.altitude_assist_kp = float(rospy.get_param("~altitude_assist_kp", 10.0))
-        self.altitude_assist_max_delta_newton = float(
-            rospy.get_param("~altitude_assist_max_delta_newton", 15.0)
+        self.use_hybrid_vertical_controller = _param_as_bool(
+            rospy.get_param("~use_hybrid_vertical_controller", True)
+        )
+        self.hybrid_vertical_learned_thrust_blend = float(
+            rospy.get_param("~hybrid_vertical_learned_thrust_blend", 0.0)
+        )
+        self.hover_vertical_position_kp = float(
+            rospy.get_param("~hover_vertical_position_kp", rospy.get_param("~altitude_assist_kp", 10.0))
+        )
+        self.hover_vertical_position_max_delta_newton = float(
+            rospy.get_param(
+                "~hover_vertical_position_max_delta_newton",
+                rospy.get_param("~altitude_assist_max_delta_newton", 15.0),
+            )
         )
         self.takeoff_altitude_error_threshold_m = float(
             rospy.get_param("~takeoff_altitude_error_threshold_m", 0.2)
@@ -97,19 +116,19 @@ class KoopmanMpcRosNode:
             rospy.get_param("~command_thrust_max_newton", 25.0)
         )
         self.hover_altitude_trim_ki = float(
-            rospy.get_param("~hover_altitude_trim_ki", 0.8)
+            rospy.get_param("~hover_altitude_trim_ki", 0.5)
         )
         self.hover_altitude_trim_max_newton = float(
             rospy.get_param("~hover_altitude_trim_max_newton", 2.5)
         )
-        self.hover_altitude_trim_start_height_fraction = float(
-            rospy.get_param("~hover_altitude_trim_start_height_fraction", 0.5)
+        self.hover_altitude_trim_enable_error_m = float(
+            rospy.get_param("~hover_altitude_trim_enable_error_m", 0.4)
         )
-        self.hover_vertical_damping_kd = float(
-            rospy.get_param("~hover_vertical_damping_kd", 3.0)
+        self.hover_altitude_trim_decay_per_s = float(
+            rospy.get_param("~hover_altitude_trim_decay_per_s", 0.35)
         )
-        self.hover_vertical_damping_start_error_m = float(
-            rospy.get_param("~hover_vertical_damping_start_error_m", 0.35)
+        self.hover_vertical_velocity_kd = float(
+            rospy.get_param("~hover_vertical_velocity_kd", rospy.get_param("~hover_vertical_damping_kd", 3.5))
         )
         self.hover_xy_position_kp = float(rospy.get_param("~hover_xy_position_kp", 0.20))
         self.hover_xy_velocity_kd = float(rospy.get_param("~hover_xy_velocity_kd", 0.35))
@@ -131,6 +150,12 @@ class KoopmanMpcRosNode:
 
         rospy.loginfo("koopman_mpc_node ready with hover-first learned MPC runtime.")
         rospy.loginfo("Using model_path=%s", str(model_path))
+        rospy.loginfo(
+            "Hybrid vertical controller=%s hover_thrust=%.3fN qp_tol=%s",
+            self.use_hybrid_vertical_controller,
+            self.hover_thrust_newton,
+            self.controller.config.qp_tol,
+        )
 
     def _handle_odometry(self, msg) -> None:
         position = np.array(
@@ -215,6 +240,7 @@ class KoopmanMpcRosNode:
         xy_velocity_error = -velocity[:2]
         z_error = float(self.reference.position_xyz[2] - position[2])
         z_velocity = float(velocity[2])
+        learned_thrust_newton = float(command.thrust_newton)
         pitch_correction = float(
             np.clip(
                 self.hover_xy_position_kp * xy_error[0] + self.hover_xy_velocity_kd * xy_velocity_error[0],
@@ -229,37 +255,45 @@ class KoopmanMpcRosNode:
                 self.hover_xy_max_roll_pitch_rad,
             )
         )
-        thrust_assist = float(
+        vertical_position_correction = float(
             np.clip(
-                self.altitude_assist_kp * max(z_error, 0.0),
-                0.0,
-                self.altitude_assist_max_delta_newton,
+                self.hover_vertical_position_kp * z_error,
+                -self.hover_vertical_position_max_delta_newton,
+                self.hover_vertical_position_max_delta_newton,
             )
         )
-        hover_damping_blend = float(
-            np.clip(
-                (self.hover_vertical_damping_start_error_m - z_error)
-                / max(self.hover_vertical_damping_start_error_m, 1e-6),
-                0.0,
-                1.0,
-            )
-        )
-        vertical_damping = self.hover_vertical_damping_kd * hover_damping_blend * max(z_velocity, 0.0)
-        if position[2] >= self.hover_altitude_trim_start_height_fraction * self.reference.position_xyz[2]:
+        vertical_damping = self.hover_vertical_velocity_kd * z_velocity
+        if abs(z_error) <= self.hover_altitude_trim_enable_error_m:
             self.hover_altitude_trim_newton = float(
                 np.clip(
                     self.hover_altitude_trim_newton
                     + self.hover_altitude_trim_ki * z_error * self.controller.config.control_time_step,
-                    0.0,
+                    -self.hover_altitude_trim_max_newton,
                     self.hover_altitude_trim_max_newton,
                 )
             )
-        thrust_newton = (
-            command.thrust_newton
-            + thrust_assist
-            + self.hover_altitude_trim_newton
-            - vertical_damping
-        )
+        else:
+            trim_decay_scale = max(
+                0.0,
+                1.0 - self.hover_altitude_trim_decay_per_s * self.controller.config.control_time_step,
+            )
+            self.hover_altitude_trim_newton *= trim_decay_scale
+
+        if self.use_hybrid_vertical_controller:
+            thrust_newton = (
+                self.hover_thrust_newton
+                + self.hybrid_vertical_learned_thrust_blend * learned_thrust_newton
+                + vertical_position_correction
+                + self.hover_altitude_trim_newton
+                - vertical_damping
+            )
+        else:
+            thrust_newton = (
+                learned_thrust_newton
+                + vertical_position_correction
+                + self.hover_altitude_trim_newton
+                - vertical_damping
+            )
         if (
             z_error >= self.takeoff_altitude_error_threshold_m
             and z_velocity <= self.takeoff_vertical_speed_threshold_mps
@@ -314,7 +348,7 @@ class KoopmanMpcRosNode:
             float(step.control[1]),
             float(step.control[2]),
             float(step.control[3]),
-            float(thrust_assist),
+            float(vertical_position_correction),
             float(thrust_newton),
             float(roll_correction),
             float(pitch_correction),
@@ -331,6 +365,8 @@ class KoopmanMpcRosNode:
             float(step.solve_time_ms),
             float(step.solve_iterations),
             1.0 if step.solve_converged else 0.0,
+            float(step.solve_projected_step_inf_norm),
+            1.0 if step.solve_hit_iteration_cap else 0.0,
         ]
         self.raw_control_pub.publish(raw)
 
