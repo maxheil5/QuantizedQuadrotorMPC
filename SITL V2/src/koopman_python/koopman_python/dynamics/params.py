@@ -29,6 +29,7 @@ class SrbParameters:
     motor_constant: float | None = None
     moment_constant: float | None = None
     rotor_count: int | None = None
+    drag_coefficients: Tuple[float, float, float] | None = None
 
     @property
     def J(self) -> np.ndarray:
@@ -37,6 +38,10 @@ class SrbParameters:
     def as_dict(self) -> Dict[str, object]:
         payload = asdict(self)
         payload["J"] = self.J.copy()
+        if self.drag_coefficients is not None:
+            payload["drag_coefficients"] = np.asarray(
+                self.drag_coefficients, dtype=float
+            )
         payload["state_layout"] = STATE_LAYOUT
         payload["control_layout"] = CONTROL_LAYOUT
         return payload
@@ -78,14 +83,28 @@ ROTORS_FIREFLY_LEE_CONTROLLER_PARAMS = SrbParameters(
     rotor_count=6,
 )
 
+ROTORS_FIREFLY_LINEAR_MPC_RUNTIME_PARAMS = SrbParameters(
+    profile_name="rotors_firefly_linear_mpc_runtime",
+    source_summary="Verified from /firefly/mav_linear_mpc and /firefly/PID_attitude_controller on Ubuntu",
+    mass=1.52,
+    inertia_diag=(0.034756, 0.045893, 0.0977),
+    gravity=9.81,
+    arm_length=0.2156,
+    motor_constant=8.54858e-06,
+    moment_constant=0.016,
+    rotor_count=6,
+    drag_coefficients=(0.01, 0.01, 0.0),
+)
+
 
 PARAMETER_PROFILES = {
     MATLAB_REFERENCE_PARAMS.profile_name: MATLAB_REFERENCE_PARAMS,
     ROTORS_FIREFLY_XACRO_PARAMS.profile_name: ROTORS_FIREFLY_XACRO_PARAMS,
     ROTORS_FIREFLY_LEE_CONTROLLER_PARAMS.profile_name: ROTORS_FIREFLY_LEE_CONTROLLER_PARAMS,
+    ROTORS_FIREFLY_LINEAR_MPC_RUNTIME_PARAMS.profile_name: ROTORS_FIREFLY_LINEAR_MPC_RUNTIME_PARAMS,
 }
 
-DEFAULT_PROFILE = ROTORS_FIREFLY_XACRO_PARAMS.profile_name
+DEFAULT_PROFILE = ROTORS_FIREFLY_LINEAR_MPC_RUNTIME_PARAMS.profile_name
 
 
 def available_profiles() -> Iterable[str]:
@@ -105,6 +124,7 @@ def compare_parameter_sets(
         "ixx_delta": rhs_inertia[0] - lhs_inertia[0],
         "iyy_delta": rhs_inertia[1] - lhs_inertia[1],
         "izz_delta": rhs_inertia[2] - lhs_inertia[2],
+        "arm_length_delta": (rhs.arm_length or 0.0) - (lhs.arm_length or 0.0),
     }
 
 

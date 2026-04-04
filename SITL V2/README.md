@@ -83,7 +83,7 @@ source /opt/ros/noetic/setup.bash
 cd ~/thesis_v2_ws
 source devel/setup.bash
 bash ~/thesis_v2_ws/QuantizedQuadrotorMPC/"SITL V2"/scripts/check_firefly_runtime_params.sh \
-  /firefly/lee_position_controller_node \
+  /firefly \
   ~/thesis_v2_ws/QuantizedQuadrotorMPC/"SITL V2"/results/summary/firefly_runtime_params.txt
 ```
 
