@@ -1,0 +1,29 @@
+{
+  "artifact_path": "/home/soarbuckiadm/Desktop/QuantizedQuadrotorMPC-main/SITL/results/offline/sitl_baseline_v1/20260402T013459Z_sitl_id_v7_hovercentered_affine_rotated/edmd_unquantized.npz",
+  "log_path": "/home/soarbuckiadm/Desktop/QuantizedQuadrotorMPC-main/SITL/results/sitl/4-3-26_2000_01/runtime_log.csv",
+  "metadata_path": "/home/soarbuckiadm/Desktop/QuantizedQuadrotorMPC-main/SITL/results/sitl/4-3-26_2000_01/run_metadata.json",
+  "one_step_prediction_rmse_after_raw_u2_mismatch": {
+    "dx": 0.04754544298302881,
+    "theta": 0.013568749629447263,
+    "wb": 0.16938268699648037,
+    "x": 0.0057696962232243795
+  },
+  "one_step_prediction_rmse_before_raw_u2_mismatch": {
+    "dx": 0.03977189119046097,
+    "theta": 0.0014999363067444503,
+    "wb": 0.0419141384744162,
+    "x": 0.004486520997580546
+  },
+  "run_name": "4-3-26_2000_01",
+  "runtime_validity": "valid_runtime",
+  "u2_first_raw_mismatch_time_s": 6.968445301,
+  "u2_first_used_mismatch_time_s": 6.968445301,
+  "u2_late_window_lateral_position_residual_norm": 0.10788143795546061,
+  "u2_late_window_lateral_velocity_residual_norm": 0.19343170166827142,
+  "u2_late_window_raw_magnitude_ratio": 0.22596963240316467,
+  "u2_late_window_raw_sign_match": 1.0,
+  "u2_late_window_start_s": 7.999936355000001,
+  "u2_late_window_used_magnitude_ratio": 0.34848245358006624,
+  "u2_late_window_used_sign_match": 1.0,
+  "u2_root_cause_classification": "state_model_mismatch"
+}

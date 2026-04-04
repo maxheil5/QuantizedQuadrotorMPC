@@ -1,0 +1,51 @@
+{
+  "artifact_eval_rmse": {
+    "dx": 0.027649949767377256,
+    "theta": 0.029165677890289305,
+    "wb": 0.07194668566081679,
+    "x": 0.0045805684288775725
+  },
+  "artifact_path": "/home/soarbuckiadm/Desktop/QuantizedQuadrotorMPC-main/SITL/results/offline/sitl_baseline_v1/20260402T013459Z_sitl_id_v7_hovercentered_affine_rotated/edmd_unquantized.npz",
+  "cost_state_mode": "decoded24_raw",
+  "divergence_time_s": 9.999936355,
+  "dominant_error_group": "dx",
+  "early_window_rmse": {
+    "dx": 0.12138091660139026,
+    "theta": 0.044952205777754196,
+    "wb": 0.2511137757500871,
+    "x": 0.0023028026741488627
+  },
+  "early_window_rmse_ratio": {
+    "dx": 4.389914543157736,
+    "theta": 1.5412707342804812,
+    "wb": 3.4902757985813277,
+    "x": 0.50273294895698
+  },
+  "early_window_s": 2.0,
+  "log_path": "/home/soarbuckiadm/Desktop/QuantizedQuadrotorMPC-main/SITL/results/sitl/4-3-26_2000_01/runtime_log.csv",
+  "post_4s_internal_bound_fraction": {
+    "u0": 0.668918918918919,
+    "u1": 0.0,
+    "u2": 0.0,
+    "u3": 0.0
+  },
+  "pre_divergence_internal_bound_fraction": {
+    "u0": 0.5334685598377282,
+    "u1": 0.0,
+    "u2": 0.0,
+    "u3": 0.0
+  },
+  "replay_horizon_steps": 10,
+  "residual_enabled": true,
+  "run_name": "4-3-26_2000_01",
+  "selected_branch": "Branch A",
+  "thresholds": {
+    "bound_activity_margin_fraction": 0.05,
+    "branch_a_state_ratio": 4.0,
+    "branch_a_theta_ratio": 3.0,
+    "branch_a_wb_ratio": 3.0,
+    "branch_b_bound_fraction": 0.1,
+    "branch_b_divergence_time_s": 4.0,
+    "post_4s_internal_bound_fraction_max": 0.15
+  }
+}
