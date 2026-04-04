@@ -268,6 +268,9 @@ def run_offline_learned_mpc_experiment(
         "simulation_duration_ms": sim_duration_s * 1000.0,
         "solve_time_ms_mean": float(np.mean(mpc_result.solve_times_ms)),
         "solve_time_ms_max": float(np.max(mpc_result.solve_times_ms)),
+        "solve_iterations_mean": float(np.mean(mpc_result.solve_iterations)),
+        "solve_iterations_max": int(np.max(mpc_result.solve_iterations)),
+        "solve_converged_fraction": float(np.mean(mpc_result.solve_converged.astype(float))),
         "A_shape": list(model.A.shape),
         "B_shape": list(model.B.shape),
         "C_shape": list(model.C.shape),
@@ -322,6 +325,8 @@ def run_offline_learned_mpc_experiment(
         Z=mpc_result.Z,
         Z_ref=mpc_result.Z_ref,
         solve_times_ms=mpc_result.solve_times_ms,
+        solve_iterations=mpc_result.solve_iterations,
+        solve_converged=mpc_result.solve_converged,
     )
 
     trajectory_rows = _trajectory_rows(mpc_result.t, actual_states, tracked_reference_states)
@@ -335,10 +340,12 @@ def run_offline_learned_mpc_experiment(
             "step_index": int(i),
             "t_s": float(mpc_result.t[i]),
             "solve_time_ms": float(mpc_result.solve_times_ms[i]),
+            "solve_iterations": int(mpc_result.solve_iterations[i]),
+            "solve_converged": bool(mpc_result.solve_converged[i]),
         }
         for i in range(mpc_result.solve_times_ms.size)
     ]
-    _write_csv(run_dir / "timing.csv", ["step_index", "t_s", "solve_time_ms"], timing_rows)
+    _write_csv(run_dir / "timing.csv", ["step_index", "t_s", "solve_time_ms", "solve_iterations", "solve_converged"], timing_rows)
 
     generate_offline_learned_mpc_figures(
         figure_dir,
@@ -410,6 +417,9 @@ def run_offline_learned_mpc_experiment(
         {"run_id": run_id, "metric_name": "simulation_duration_ms", "metric_value": sim_duration_s * 1000.0, "units": "ms"},
         {"run_id": run_id, "metric_name": "solve_time_ms_mean", "metric_value": float(np.mean(mpc_result.solve_times_ms)), "units": "ms"},
         {"run_id": run_id, "metric_name": "solve_time_ms_max", "metric_value": float(np.max(mpc_result.solve_times_ms)), "units": "ms"},
+        {"run_id": run_id, "metric_name": "solve_iterations_mean", "metric_value": float(np.mean(mpc_result.solve_iterations)), "units": "iterations"},
+        {"run_id": run_id, "metric_name": "solve_iterations_max", "metric_value": int(np.max(mpc_result.solve_iterations)), "units": "iterations"},
+        {"run_id": run_id, "metric_name": "solve_converged_fraction", "metric_value": float(np.mean(mpc_result.solve_converged.astype(float))), "units": "fraction"},
     ]
     for row in metric_rows:
         _append_csv_row(

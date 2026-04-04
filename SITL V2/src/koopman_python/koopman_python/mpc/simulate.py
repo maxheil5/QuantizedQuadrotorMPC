@@ -12,7 +12,7 @@ from koopman_python.dynamics.srb import pack_state
 from koopman_python.edmd.basis import lift_state
 from koopman_python.edmd.fit import EdmdModel
 from koopman_python.edmd.evaluate import vee_map
-from koopman_python.mpc.qp import build_qp, solve_box_qp
+from koopman_python.mpc.qp import build_qp_structure, form_qp, shift_warm_start, solve_box_qp
 from koopman_python.training.random_trajectories import rk4_step
 
 
@@ -38,6 +38,8 @@ class MpcSimulationResult:
     Z: np.ndarray
     Z_ref: np.ndarray
     solve_times_ms: np.ndarray
+    solve_iterations: np.ndarray
+    solve_converged: np.ndarray
 
 
 def observed_state_to_full_state(observed: np.ndarray) -> np.ndarray:
@@ -86,22 +88,38 @@ def simulate_closed_loop(
     Xd_values = []
     Z_values = []
     solve_times_ms = []
+    solve_iterations = []
+    solve_converged = []
+
+    qp_structure = build_qp_structure(
+        model=model,
+        horizon=cfg.pred_horizon,
+        lower_bound=cfg.control_lower_bound,
+        upper_bound=cfg.control_upper_bound,
+    )
+    warm_start = None
 
     current_time = 0.0
     for ii in range(max_iter):
         z_ref_horizon = Z_ref[:, ii : ii + cfg.pred_horizon]
-        qp = build_qp(
-            model=model,
+        qp = form_qp(
+            structure=qp_structure,
             z_current=Z,
             z_reference=z_ref_horizon,
-            horizon=cfg.pred_horizon,
-            lower_bound=cfg.control_lower_bound,
-            upper_bound=cfg.control_upper_bound,
         )
 
         solve_start = time.perf_counter()
-        zval = solve_box_qp(qp, max_iter=cfg.qp_max_iter, tol=cfg.qp_tol)
+        solve_result = solve_box_qp(
+            qp,
+            initial_guess=warm_start,
+            max_iter=cfg.qp_max_iter,
+            tol=cfg.qp_tol,
+        )
         solve_times_ms.append((time.perf_counter() - solve_start) * 1000.0)
+        solve_iterations.append(solve_result.iterations)
+        solve_converged.append(solve_result.converged)
+        zval = solve_result.solution
+        warm_start = shift_warm_start(zval, qp_structure.control_dim)
         Ut = zval[:4]
 
         Xt_obs = model.C @ Z
@@ -130,4 +148,6 @@ def simulate_closed_loop(
         Z=np.column_stack(Z_values),
         Z_ref=Z_ref[:, :max_iter],
         solve_times_ms=np.asarray(solve_times_ms, dtype=float),
+        solve_iterations=np.asarray(solve_iterations, dtype=int),
+        solve_converged=np.asarray(solve_converged, dtype=bool),
     )
