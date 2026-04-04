@@ -84,7 +84,7 @@ if rosnode list 2>/dev/null | grep -q '^/firefly/koopman_mpc_node$'; then
 fi
 
 echo "Starting learned hover node."
-nohup roslaunch koopman_mpc_ros koopman_mpc_hover.launch "model_path:=${MODEL_PATH}" odometry_topic:=ground_truth/odometry > "${RUN_DIR}/koopman_mpc_node.log" 2>&1 &
+nohup env ROS_NAMESPACE=firefly rosrun koopman_mpc_ros koopman_mpc_node.py __name:=koopman_mpc_node "_model_path:=${MODEL_PATH}" _parameter_profile:=rotors_firefly_linear_mpc_runtime _pred_horizon:=10 _qp_max_iter:=100 odometry:=ground_truth/odometry > "${RUN_DIR}/koopman_mpc_node.log" 2>&1 &
 koopman_pid="$!"
 koopman_started_by_script=1
 wait_for_success "rosnode list | grep -q '^/firefly/koopman_mpc_node$'" "koopman_mpc_node"
