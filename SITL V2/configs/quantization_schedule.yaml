@@ -1,0 +1,18 @@
+word_lengths:
+  - 8
+  - 12
+  - 14
+  - 16
+
+unquantized_reference: true
+
+realization_schedule:
+  - 5
+  - 10
+  - 20
+  - 50
+
+promotion_rule: >
+  Only move to the next realization count after the previous stage has stable
+  metrics, interpretable figures, and no obvious pipeline bugs.
+

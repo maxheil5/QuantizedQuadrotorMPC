@@ -1,0 +1,14 @@
+scenario_name: line_tracking
+duration_s: 5.0
+reference_type: line
+reference_frame: world
+start_m:
+  - 0.0
+  - 0.0
+  - 1.0
+end_m:
+  - 2.0
+  - 0.0
+  - 1.0
+yaw_rad: 0.0
+

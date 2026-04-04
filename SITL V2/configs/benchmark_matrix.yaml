@@ -1,0 +1,20 @@
+classical_benchmark:
+  vehicle: firefly
+  scenarios:
+    - hover_5s
+    - line_tracking
+    - circle_tracking
+  controllers:
+    - linear_mpc
+    - nonlinear_mpc
+  success_repetitions_required: 3
+
+learned_benchmark:
+  vehicle: firefly
+  scenarios:
+    - hover_5s
+    - line_tracking
+    - circle_tracking
+  controller: learned_edmd_mpc
+  success_repetitions_required: 3
+

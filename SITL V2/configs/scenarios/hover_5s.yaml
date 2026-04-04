@@ -1,0 +1,10 @@
+scenario_name: hover_5s
+duration_s: 5.0
+reference_type: hover
+reference_frame: world
+position_m:
+  - 0.0
+  - 0.0
+  - 1.0
+yaw_rad: 0.0
+

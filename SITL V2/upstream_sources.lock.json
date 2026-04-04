@@ -1,0 +1,42 @@
+{
+  "workspace_root_default": "~/thesis_v2_ws",
+  "repo_checkout_default": "~/thesis_v2_ws/QuantizedQuadrotorMPC",
+  "upstreams": [
+    {
+      "name": "rotors_simulator",
+      "role": "gazebo_simulator",
+      "url": "https://github.com/ethz-asl/rotors_simulator.git",
+      "commit": "cd813b7a"
+    },
+    {
+      "name": "mav_control_rw",
+      "role": "classical_mpc_baseline",
+      "url": "https://github.com/ethz-asl/mav_control_rw.git",
+      "commit": "207058d"
+    },
+    {
+      "name": "KoopmanMPC_Quadrotor",
+      "role": "learned_edmd_reference",
+      "url": "https://github.com/sriram-2502/KoopmanMPC_Quadrotor.git",
+      "commit": "4511293"
+    },
+    {
+      "name": "mav_comm",
+      "role": "workspace_dependency",
+      "url": "https://github.com/ethz-asl/mav_comm.git",
+      "commit": null
+    },
+    {
+      "name": "eigen_catkin",
+      "role": "workspace_dependency",
+      "url": "https://github.com/ethz-asl/eigen_catkin.git",
+      "commit": null
+    },
+    {
+      "name": "catkin_simple",
+      "role": "workspace_dependency",
+      "url": "https://github.com/catkin/catkin_simple.git",
+      "commit": null
+    }
+  ]
+}

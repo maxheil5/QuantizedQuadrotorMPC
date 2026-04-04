@@ -1,0 +1,26 @@
+{
+  "v2_active": true,
+  "word_lengths": [
+    8,
+    12,
+    14,
+    16
+  ],
+  "realization_schedule": [
+    5,
+    10,
+    20,
+    50
+  ],
+  "scenarios": [
+    "hover_5s",
+    "line_tracking",
+    "circle_tracking"
+  ],
+  "controller_variants": [
+    "linear_mpc",
+    "nonlinear_mpc",
+    "learned_edmd_mpc",
+    "quantized_learned_edmd_mpc"
+  ]
+}

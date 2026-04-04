@@ -1,0 +1,3 @@
+<launch>
+  <node pkg="koopman_mpc_ros" type="koopman_mpc_node.py" name="koopman_mpc_node" output="screen" />
+</launch>
