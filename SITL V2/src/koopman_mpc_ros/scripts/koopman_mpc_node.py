@@ -73,6 +73,7 @@ class KoopmanMpcRosNode:
             model=load_edmd_model(model_path),
             config=runtime_config,
         )
+        self.hover_thrust_newton = float(self.controller.params["mass"]) * 9.81
         self.altitude_assist_kp = float(rospy.get_param("~altitude_assist_kp", 10.0))
         self.altitude_assist_max_delta_newton = float(
             rospy.get_param("~altitude_assist_max_delta_newton", 15.0)
@@ -80,17 +81,26 @@ class KoopmanMpcRosNode:
         self.takeoff_altitude_error_threshold_m = float(
             rospy.get_param("~takeoff_altitude_error_threshold_m", 0.2)
         )
+        self.takeoff_boost_full_error_m = float(
+            rospy.get_param("~takeoff_boost_full_error_m", 0.5)
+        )
         self.takeoff_vertical_speed_threshold_mps = float(
             rospy.get_param("~takeoff_vertical_speed_threshold_mps", 0.5)
         )
         self.takeoff_min_thrust_newton = float(
             rospy.get_param(
                 "~takeoff_min_thrust_newton",
-                max(float(self.controller.params["mass"]) * 9.81 + 2.0, 20.0),
+                max(self.hover_thrust_newton + 2.0, 20.0),
             )
         )
         self.command_thrust_max_newton = float(
             rospy.get_param("~command_thrust_max_newton", 25.0)
+        )
+        self.hover_vertical_damping_kd = float(
+            rospy.get_param("~hover_vertical_damping_kd", 3.0)
+        )
+        self.hover_vertical_damping_start_error_m = float(
+            rospy.get_param("~hover_vertical_damping_start_error_m", 0.35)
         )
         self.hover_xy_position_kp = float(rospy.get_param("~hover_xy_position_kp", 0.20))
         self.hover_xy_velocity_kd = float(rospy.get_param("~hover_xy_velocity_kd", 0.35))
@@ -214,12 +224,36 @@ class KoopmanMpcRosNode:
                 self.altitude_assist_max_delta_newton,
             )
         )
-        thrust_newton = command.thrust_newton + thrust_assist
+        hover_damping_blend = float(
+            np.clip(
+                (self.hover_vertical_damping_start_error_m - z_error)
+                / max(self.hover_vertical_damping_start_error_m, 1e-6),
+                0.0,
+                1.0,
+            )
+        )
+        vertical_damping = self.hover_vertical_damping_kd * hover_damping_blend * max(z_velocity, 0.0)
+        thrust_newton = command.thrust_newton + thrust_assist - vertical_damping
         if (
             z_error >= self.takeoff_altitude_error_threshold_m
             and z_velocity <= self.takeoff_vertical_speed_threshold_mps
         ):
-            thrust_newton = max(thrust_newton, self.takeoff_min_thrust_newton)
+            boost_full_error_m = max(
+                self.takeoff_boost_full_error_m,
+                self.takeoff_altitude_error_threshold_m + 1e-6,
+            )
+            takeoff_boost_scale = float(
+                np.clip(
+                    (z_error - self.takeoff_altitude_error_threshold_m)
+                    / (boost_full_error_m - self.takeoff_altitude_error_threshold_m),
+                    0.0,
+                    1.0,
+                )
+            )
+            takeoff_floor = self.hover_thrust_newton + takeoff_boost_scale * (
+                self.takeoff_min_thrust_newton - self.hover_thrust_newton
+            )
+            thrust_newton = max(thrust_newton, takeoff_floor)
         thrust_newton = float(np.clip(thrust_newton, 0.0, self.command_thrust_max_newton))
         roll_rad = float(
             np.clip(
@@ -266,6 +300,7 @@ class KoopmanMpcRosNode:
             float(velocity[1]),
             float(z_error),
             float(z_velocity),
+            float(vertical_damping),
             float(step.solve_time_ms),
             float(step.solve_iterations),
             1.0 if step.solve_converged else 0.0,
