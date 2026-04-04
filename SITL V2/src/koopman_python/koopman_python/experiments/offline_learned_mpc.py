@@ -16,6 +16,7 @@ from koopman_python.dynamics.params import DEFAULT_PROFILE, get_params
 from koopman_python.edmd.basis import lift_state, lift_trajectory
 from koopman_python.edmd.evaluate import compute_rmse, decode_full_state_trajectory
 from koopman_python.edmd.fit import fit_edmd
+from koopman_python.experiments.figures import generate_offline_learned_mpc_figures
 from koopman_python.experiments.offline_unquantized import (
     _append_csv_row,
     _control_rows,
@@ -27,13 +28,18 @@ from koopman_python.experiments.offline_unquantized import (
     _write_csv,
     _write_json,
 )
+from koopman_python.experiments.reference_scenarios import (
+    RANDOM_REFERENCE_SCENARIO,
+    available_scenarios,
+    generate_reference_states,
+    get_scenario_definition,
+)
 from koopman_python.mpc import MpcSimulationConfig, simulate_closed_loop
 from koopman_python.training import get_random_trajectories
 
 
 RUN_FAMILY = "learned"
 CONTROLLER_VARIANT = "learned_edmd_mpc"
-SCENARIO = "offline_learned_mpc"
 WORD_LENGTH = "unquantized"
 SOLVER_BACKEND = "projected_gradient_box_qp"
 
@@ -46,9 +52,10 @@ class OfflineLearnedMpcConfig:
     n_basis: int = 3
     seed: int = 2141444
     parameter_profile: str = DEFAULT_PROFILE
+    scenario_name: str = "hover_5s"
     pred_horizon: int = 10
     sim_time_step: float = 1e-3
-    sim_duration: float = 1.2
+    sim_duration: float = 5.0
     control_lower_bound: float = -50.0
     control_upper_bound: float = 50.0
     qp_max_iter: int = 2000
@@ -60,8 +67,20 @@ def _timestamp_run_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ_offline_learned_mpc")
 
 
+def _effective_scenario_name(config: OfflineLearnedMpcConfig) -> str:
+    return config.scenario_name or RANDOM_REFERENCE_SCENARIO
+
+
 def _reference_duration(config: OfflineLearnedMpcConfig) -> float:
-    return config.sim_duration + config.pred_horizon * config.sim_time_step
+    return _effective_sim_duration(config) + config.pred_horizon * config.sim_time_step
+
+
+def _effective_sim_duration(config: OfflineLearnedMpcConfig) -> float:
+    scenario_name = _effective_scenario_name(config)
+    if scenario_name == RANDOM_REFERENCE_SCENARIO:
+        return config.sim_duration
+    definition = get_scenario_definition(scenario_name)
+    return min(config.sim_duration, definition.duration_s)
 
 
 def _rms_norm(values: np.ndarray) -> float:
@@ -154,15 +173,31 @@ def run_offline_learned_mpc_experiment(
     repo_root = _repo_root()
     results_root = output_root or (v2_root / "results")
     run_id = _timestamp_run_id()
-    run_dir = results_root / "learned" / "unquantized" / SCENARIO / run_id
+    scenario_name = _effective_scenario_name(config)
+    run_dir = results_root / "learned" / "unquantized" / scenario_name / run_id
     figure_dir = run_dir / "figures"
     figure_dir.mkdir(parents=True, exist_ok=True)
 
     params = get_params(config.parameter_profile)
-    initial_state = _default_initial_state()
     training_time_grid = _time_grid(config.training_dt, config.training_t_span)
     reference_time_grid = _time_grid(config.sim_time_step, _reference_duration(config))
     rng = np.random.default_rng(config.seed)
+
+    if scenario_name == RANDOM_REFERENCE_SCENARIO:
+        initial_state = _default_initial_state()
+        reference_batch = get_random_trajectories(
+            initial_state=initial_state,
+            n_control=1,
+            t_traj=reference_time_grid,
+            mode=config.reference_mode,
+            params=params,
+            rng=rng,
+        )
+        reference_states = reference_batch.X[:, 1:]
+    else:
+        deterministic_reference = generate_reference_states(scenario_name, reference_time_grid)
+        initial_state = deterministic_reference[:, 0]
+        reference_states = deterministic_reference[:, 1:]
 
     fit_start = time.perf_counter()
     train_batch = get_random_trajectories(
@@ -185,15 +220,6 @@ def run_offline_learned_mpc_experiment(
     training_observed_pred = model.C @ (model.A @ model.Z1 + model.B @ train_batch.U1)
     training_rmse = compute_rmse(training_observed_pred, training_observed_true)
 
-    reference_batch = get_random_trajectories(
-        initial_state=initial_state,
-        n_control=1,
-        t_traj=reference_time_grid,
-        mode=config.reference_mode,
-        params=params,
-        rng=rng,
-    )
-    reference_states = reference_batch.X[:, 1:]
     lifted_reference = lift_trajectory(reference_states, config.n_basis)
     initial_lifted_state = lift_state(initial_state, config.n_basis)
 
@@ -206,7 +232,7 @@ def run_offline_learned_mpc_experiment(
         config=MpcSimulationConfig(
             pred_horizon=config.pred_horizon,
             sim_time_step=config.sim_time_step,
-            sim_duration=config.sim_duration,
+            sim_duration=_effective_sim_duration(config),
             control_lower_bound=config.control_lower_bound,
             control_upper_bound=config.control_upper_bound,
             qp_max_iter=config.qp_max_iter,
@@ -237,6 +263,7 @@ def run_offline_learned_mpc_experiment(
         "n_training_snapshots": int(train_batch.X1.shape[1]),
         "n_sim_steps": int(actual_states.shape[1]),
         "pred_horizon": config.pred_horizon,
+        "effective_sim_duration": _effective_sim_duration(config),
         "fit_duration_ms": fit_duration_s * 1000.0,
         "simulation_duration_ms": sim_duration_s * 1000.0,
         "solve_time_ms_mean": float(np.mean(mpc_result.solve_times_ms)),
@@ -251,10 +278,11 @@ def run_offline_learned_mpc_experiment(
         "run_id": run_id,
         "run_family": RUN_FAMILY,
         "controller_variant": CONTROLLER_VARIANT,
-        "scenario": SCENARIO,
+        "scenario": scenario_name,
         "word_length": WORD_LENGTH,
         "realizations": 1,
         **asdict(config),
+        "effective_sim_duration": _effective_sim_duration(config),
         "reference_duration": _reference_duration(config),
         "reference_steps": int(reference_states.shape[1]),
     }
@@ -312,10 +340,18 @@ def run_offline_learned_mpc_experiment(
     ]
     _write_csv(run_dir / "timing.csv", ["step_index", "t_s", "solve_time_ms"], timing_rows)
 
+    generate_offline_learned_mpc_figures(
+        figure_dir,
+        time_values=mpc_result.t,
+        actual_states=actual_states,
+        reference_states=tracked_reference_states,
+        control_matrix=mpc_result.U.T,
+    )
+
     (run_dir / "notes.txt").write_text(
         "First offline closed-loop learned EDMD-MPC run.\n"
         f"The optimization backend is {SOLVER_BACKEND}, not MATLAB quadprog.\n"
-        "Use trajectory.csv, control.csv, timing.csv, and metrics.json for the first tracking plots.\n",
+        "SVG figures are generated automatically under figures/.\n",
         encoding="utf-8",
     )
 
@@ -324,7 +360,7 @@ def run_offline_learned_mpc_experiment(
         "run_id": run_id,
         "run_family": RUN_FAMILY,
         "controller_variant": CONTROLLER_VARIANT,
-        "scenario": SCENARIO,
+        "scenario": scenario_name,
         "word_length": WORD_LENGTH,
         "realizations": 1,
         "config_path": str(run_dir / "config.json"),
@@ -401,12 +437,12 @@ def run_offline_learned_mpc_experiment(
             "run_id": run_id,
             "run_family": RUN_FAMILY,
             "controller_variant": CONTROLLER_VARIANT,
-            "scenario": SCENARIO,
+            "scenario": scenario_name,
             "word_length": WORD_LENGTH,
             "realizations": 1,
             "success": metrics_payload["success"],
-            "hover_rmse_m": "",
-            "tracking_rmse_m": tracking_metrics["position_rmse_m"],
+            "hover_rmse_m": tracking_metrics["position_rmse_m"] if scenario_name == "hover_5s" else "",
+            "tracking_rmse_m": "" if scenario_name == "hover_5s" else tracking_metrics["position_rmse_m"],
             "max_error_m": tracking_metrics["max_position_error_m"],
             "solve_time_ms_mean": float(np.mean(mpc_result.solve_times_ms)),
         },
@@ -423,9 +459,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-basis", type=int, default=3)
     parser.add_argument("--seed", type=int, default=2141444)
     parser.add_argument("--parameter-profile", type=str, default=DEFAULT_PROFILE)
+    parser.add_argument("--scenario-name", type=str, default="hover_5s", choices=available_scenarios())
     parser.add_argument("--pred-horizon", type=int, default=10)
     parser.add_argument("--sim-time-step", type=float, default=1e-3)
-    parser.add_argument("--sim-duration", type=float, default=1.2)
+    parser.add_argument("--sim-duration", type=float, default=5.0)
     parser.add_argument("--control-lower-bound", type=float, default=-50.0)
     parser.add_argument("--control-upper-bound", type=float, default=50.0)
     parser.add_argument("--qp-max-iter", type=int, default=2000)
@@ -444,6 +481,7 @@ def main() -> None:
         n_basis=args.n_basis,
         seed=args.seed,
         parameter_profile=args.parameter_profile,
+        scenario_name=args.scenario_name,
         pred_horizon=args.pred_horizon,
         sim_time_step=args.sim_time_step,
         sim_duration=args.sim_duration,
