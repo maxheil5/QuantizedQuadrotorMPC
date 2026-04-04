@@ -22,11 +22,12 @@ def _import_ros() -> tuple[Any, Any, Any]:
         import rospy
         from geometry_msgs.msg import PoseStamped
         from nav_msgs.msg import Odometry
+        from std_msgs.msg import Float64MultiArray
     except ImportError as exc:  # pragma: no cover
         raise SystemExit(
             "rospy is required. Source /opt/ros/noetic/setup.bash and your workspace first."
         ) from exc
-    return rospy, PoseStamped, Odometry
+    return rospy, PoseStamped, Odometry, Float64MultiArray
 
 
 def _repo_root() -> Path:
@@ -63,6 +64,7 @@ class HoverValidationConfig:
     xy_tolerance_m: float = 0.30
     odometry_topic: str = "/firefly/ground_truth/odometry"
     pose_topic: str = "/firefly/command/pose"
+    raw_control_topic: str = "/firefly/command/raw_body_wrench"
     output_root: str | None = None
 
 
@@ -75,6 +77,44 @@ class Sample:
     vx_mps: float
     vy_mps: float
     vz_mps: float
+
+
+@dataclass(frozen=True)
+class CommandSample:
+    t_s: float
+    learned_thrust_newton: float
+    thrust_assist_newton: float
+    commanded_thrust_newton: float
+    z_error_m: float
+    z_velocity_mps: float
+    hover_altitude_trim_newton: float
+    vertical_damping_newton: float
+
+
+def _command_sample_from_raw_data(t_s: float, raw_data: list[float]) -> CommandSample:
+    data = [float(value) for value in raw_data]
+
+    def _value(index: int) -> float:
+        return data[index] if index < len(data) else math.nan
+
+    hover_altitude_trim_newton = math.nan
+    vertical_damping_newton = math.nan
+    if len(data) >= 21:
+        hover_altitude_trim_newton = _value(16)
+        vertical_damping_newton = _value(17)
+    elif len(data) >= 18:
+        vertical_damping_newton = _value(16)
+
+    return CommandSample(
+        t_s=t_s,
+        learned_thrust_newton=_value(0),
+        thrust_assist_newton=_value(4),
+        commanded_thrust_newton=_value(5),
+        z_error_m=_value(14),
+        z_velocity_mps=_value(15),
+        hover_altitude_trim_newton=hover_altitude_trim_newton,
+        vertical_damping_newton=vertical_damping_newton,
+    )
 
 
 def _timestamp_run_id() -> str:
@@ -93,10 +133,36 @@ def _write_csv(path: Path, samples: list[Sample]) -> None:
             writer.writerow(asdict(sample))
 
 
+def _write_command_csv(path: Path, samples: list[CommandSample]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(asdict(samples[0]).keys()) if samples else list(asdict(CommandSample(0, 0, 0, 0, 0, 0, 0, 0)).keys()),
+        )
+        writer.writeheader()
+        for sample in samples:
+            writer.writerow(asdict(sample))
+
+
 def _rms(values: list[float]) -> float:
     if not values:
         return math.nan
     return math.sqrt(sum(value * value for value in values) / len(values))
+
+
+def _mean(values: list[float]) -> float:
+    finite_values = [value for value in values if math.isfinite(value)]
+    if not finite_values:
+        return math.nan
+    return sum(finite_values) / len(finite_values)
+
+
+def _std(values: list[float]) -> float:
+    finite_values = [value for value in values if math.isfinite(value)]
+    if not finite_values:
+        return math.nan
+    mean_value = _mean(finite_values)
+    return math.sqrt(sum((value - mean_value) ** 2 for value in finite_values) / len(finite_values))
 
 
 def _latest_subset(samples: list[Sample], window_s: float) -> list[Sample]:
@@ -136,7 +202,50 @@ def _make_pose_message(PoseStamped: Any, config: HoverValidationConfig) -> Any:
     return message
 
 
-def _compute_metrics(samples: list[Sample], config: HoverValidationConfig) -> dict[str, Any]:
+def _compute_command_metrics(command_samples: list[CommandSample], settle_window_s: float) -> dict[str, Any]:
+    if not command_samples:
+        return {
+            "sample_count": 0,
+            "reason": "no_command_samples",
+        }
+
+    tail = _latest_subset(command_samples, settle_window_s)
+
+    def _series(name: str) -> list[float]:
+        return [float(getattr(sample, name)) for sample in command_samples]
+
+    def _tail_series(name: str) -> list[float]:
+        return [float(getattr(sample, name)) for sample in tail]
+
+    def _summary(name: str) -> dict[str, float]:
+        values = _series(name)
+        tail_values = _tail_series(name)
+        finite_values = [value for value in values if math.isfinite(value)]
+        return {
+            "mean": _mean(values),
+            "std": _std(values),
+            "min": min(finite_values) if finite_values else math.nan,
+            "max": max(finite_values) if finite_values else math.nan,
+            "tail_mean": _mean(tail_values),
+        }
+
+    return {
+        "sample_count": len(command_samples),
+        "learned_thrust_newton": _summary("learned_thrust_newton"),
+        "thrust_assist_newton": _summary("thrust_assist_newton"),
+        "commanded_thrust_newton": _summary("commanded_thrust_newton"),
+        "hover_altitude_trim_newton": _summary("hover_altitude_trim_newton"),
+        "vertical_damping_newton": _summary("vertical_damping_newton"),
+        "z_error_m": _summary("z_error_m"),
+        "z_velocity_mps": _summary("z_velocity_mps"),
+    }
+
+
+def _compute_metrics(
+    samples: list[Sample],
+    command_samples: list[CommandSample],
+    config: HoverValidationConfig,
+) -> dict[str, Any]:
     if not samples:
         return {
             "success": False,
@@ -203,11 +312,12 @@ def _compute_metrics(samples: list[Sample], config: HoverValidationConfig) -> di
             "xy_m": config.xy_tolerance_m,
             "z_m": config.z_tolerance_m,
         },
+        "command_metrics": _compute_command_metrics(command_samples, min(config.settle_window_s, config.duration_s)),
     }
 
 
 def run_validation(config: HoverValidationConfig) -> Path:
-    rospy, PoseStamped, Odometry = _import_ros()
+    rospy, PoseStamped, Odometry, Float64MultiArray = _import_ros()
 
     if not rospy.get_param("/use_sim_time", False):
         rospy.logwarn("/use_sim_time is false. This validator expects Gazebo sim time.")
@@ -218,16 +328,24 @@ def run_validation(config: HoverValidationConfig) -> Path:
 
     repo_root = _repo_root()
     samples: list[Sample] = []
+    command_samples: list[CommandSample] = []
     latest_odometry: Any | None = None
+    latest_raw_control: Any | None = None
 
     def _handle_odometry(message: Any) -> None:
         nonlocal latest_odometry
         latest_odometry = message
 
+    def _handle_raw_control(message: Any) -> None:
+        nonlocal latest_raw_control
+        latest_raw_control = message
+
     rospy.init_node("hover_validation", anonymous=True)
     pose_pub = rospy.Publisher(config.pose_topic, PoseStamped, queue_size=1)
     odom_sub = rospy.Subscriber(config.odometry_topic, Odometry, _handle_odometry, queue_size=10)
+    raw_control_sub = rospy.Subscriber(config.raw_control_topic, Float64MultiArray, _handle_raw_control, queue_size=10)
     del odom_sub
+    del raw_control_sub
 
     pose_message = _make_pose_message(PoseStamped, config)
     pose_publish_period_s = 1.0 / config.publish_rate_hz
@@ -265,14 +383,22 @@ def run_validation(config: HoverValidationConfig) -> Path:
                     vz_mps=float(latest_odometry.twist.twist.linear.z),
                 )
             )
+        if latest_raw_control is not None:
+            command_samples.append(
+                _command_sample_from_raw_data(
+                    t_s=elapsed,
+                    raw_data=list(latest_raw_control.data),
+                )
+            )
         rospy.sleep(0.02)
 
-    metrics = _compute_metrics(samples, config)
+    metrics = _compute_metrics(samples, command_samples, config)
 
     _write_json(run_dir / "config.json", asdict(config))
     _write_json(run_dir / "metrics.json", metrics)
     _write_json(run_dir / "environment.json", _environment_payload(repo_root))
     _write_csv(run_dir / "odometry.csv", samples)
+    _write_command_csv(run_dir / "command.csv", command_samples)
 
     print(f"hover_validation_run_dir={run_dir}")
     print(json.dumps(metrics, indent=2, sort_keys=True))
@@ -292,6 +418,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--xy-tolerance", type=float, default=HoverValidationConfig.xy_tolerance_m)
     parser.add_argument("--odometry-topic", default=HoverValidationConfig.odometry_topic)
     parser.add_argument("--pose-topic", default=HoverValidationConfig.pose_topic)
+    parser.add_argument("--raw-control-topic", default=HoverValidationConfig.raw_control_topic)
     parser.add_argument("--output-root")
     return parser
 
@@ -311,6 +438,7 @@ def main() -> None:
         xy_tolerance_m=args.xy_tolerance,
         odometry_topic=args.odometry_topic,
         pose_topic=args.pose_topic,
+        raw_control_topic=args.raw_control_topic,
         output_root=args.output_root,
     )
     run_validation(config)
