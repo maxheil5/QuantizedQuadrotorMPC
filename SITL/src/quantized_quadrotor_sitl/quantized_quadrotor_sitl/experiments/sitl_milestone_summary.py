@@ -104,9 +104,28 @@ def summarize_milestone_run(run_dir: Path) -> dict[str, object]:
     return row
 
 
+def _write_milestone_summary_csv(summary_path: Path, rows: list[dict[str, object]]) -> None:
+    with summary_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=MILESTONE_SUMMARY_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def milestone_summary_contains_run(summary_path: Path, run_name: str) -> bool:
+    resolved_summary_path = Path(summary_path)
+    if not resolved_summary_path.exists():
+        return False
+    with resolved_summary_path.open("r", encoding="utf-8", newline="") as stream:
+        for row in csv.DictReader(stream):
+            if row.get("run_name") == run_name:
+                return True
+    return False
+
+
 def update_milestone_summary_csv(run_dir: Path) -> Path:
     resolved_run_dir = Path(run_dir).resolve(strict=False)
     summary_path = resolved_run_dir.parent / "milestone_summary.csv"
+    run_snapshot_path = resolved_run_dir / "milestone_summary.csv"
     row = summarize_milestone_run(resolved_run_dir)
 
     rows: list[dict[str, object]] = []
@@ -119,8 +138,6 @@ def update_milestone_summary_csv(run_dir: Path) -> Path:
     rows.append(row)
     rows.sort(key=lambda item: str(item["run_name"]))
 
-    with summary_path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=MILESTONE_SUMMARY_FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
+    _write_milestone_summary_csv(summary_path, rows)
+    _write_milestone_summary_csv(run_snapshot_path, rows)
     return summary_path

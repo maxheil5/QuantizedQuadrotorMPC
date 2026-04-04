@@ -7,7 +7,11 @@ from pathlib import Path
 import numpy as np
 
 from quantized_quadrotor_sitl.core.types import EDMDModel
-from quantized_quadrotor_sitl.experiments.sitl_milestone_summary import summarize_milestone_run, update_milestone_summary_csv
+from quantized_quadrotor_sitl.experiments.sitl_milestone_summary import (
+    milestone_summary_contains_run,
+    summarize_milestone_run,
+    update_milestone_summary_csv,
+)
 from quantized_quadrotor_sitl.experiments.sitl_runtime_health import analyze_runtime_health
 
 
@@ -177,12 +181,17 @@ def test_update_milestone_summary_csv_writes_and_updates_run_rows(tmp_path: Path
 
     summary_path = update_milestone_summary_csv(run_dir)
     assert summary_path == results_root / "milestone_summary.csv"
+    assert (run_dir / "milestone_summary.csv").exists()
+    assert milestone_summary_contains_run(summary_path, "4-3-26_1700_01") is True
 
     with summary_path.open("r", encoding="utf-8", newline="") as stream:
         rows = list(csv.DictReader(stream))
     assert len(rows) == 1
     assert rows[0]["run_name"] == "4-3-26_1700_01"
     assert rows[0]["u2_root_cause_classification"] == "inconclusive"
+    with (run_dir / "milestone_summary.csv").open("r", encoding="utf-8", newline="") as stream:
+        snapshot_rows = list(csv.DictReader(stream))
+    assert snapshot_rows == rows
 
     update_milestone_summary_csv(run_dir)
     with summary_path.open("r", encoding="utf-8", newline="") as stream:

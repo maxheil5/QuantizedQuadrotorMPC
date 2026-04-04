@@ -173,8 +173,11 @@ def test_run_postrun_edmd_analyses_writes_drift_and_control_sidecars(tmp_path: P
     assert summary["cost_state_mode"] == "minimal_residual"
     assert Path(summary["runtime_health_summary_path"]) == run_dir / "runtime_health_summary.json"
     assert Path(summary["milestone_summary_path"]) == run_dir.parent / "milestone_summary.csv"
+    assert Path(summary["milestone_summary_snapshot_path"]) == run_dir / "milestone_summary.csv"
+    assert summary["milestone_summary_contains_run"] is True
     assert (run_dir / "runtime_health_summary.json").exists()
     assert (run_dir.parent / "milestone_summary.csv").exists()
+    assert (run_dir / "milestone_summary.csv").exists()
     assert (run_dir / "drift_summary.json").exists()
     assert (run_dir / "drift_trace.csv").exists()
     assert (run_dir / "control_audit_summary.json").exists()
@@ -207,8 +210,11 @@ def test_run_postrun_edmd_analyses_writes_sidecars_from_run_dir(tmp_path: Path):
     assert Path(summary["run_dir"]) == run_dir
     assert Path(summary["runtime_health_summary_path"]) == run_dir / "runtime_health_summary.json"
     assert Path(summary["milestone_summary_path"]) == run_dir.parent / "milestone_summary.csv"
+    assert Path(summary["milestone_summary_snapshot_path"]) == run_dir / "milestone_summary.csv"
+    assert summary["milestone_summary_contains_run"] is True
     assert (run_dir / "runtime_health_summary.json").exists()
     assert (run_dir.parent / "milestone_summary.csv").exists()
+    assert (run_dir / "milestone_summary.csv").exists()
     assert (run_dir / "drift_summary.json").exists()
     assert (run_dir / "control_audit_summary.json").exists()
     assert (run_dir / "u2_root_cause_summary.json").exists()
@@ -238,8 +244,11 @@ def test_run_postrun_edmd_analyses_writes_sidecars_from_log_path(tmp_path: Path)
     assert Path(summary["run_dir"]) == run_dir
     assert Path(summary["runtime_health_summary_path"]) == run_dir / "runtime_health_summary.json"
     assert Path(summary["milestone_summary_path"]) == run_dir.parent / "milestone_summary.csv"
+    assert Path(summary["milestone_summary_snapshot_path"]) == run_dir / "milestone_summary.csv"
+    assert summary["milestone_summary_contains_run"] is True
     assert (run_dir / "runtime_health_summary.json").exists()
     assert (run_dir.parent / "milestone_summary.csv").exists()
+    assert (run_dir / "milestone_summary.csv").exists()
     assert (run_dir / "drift_summary.json").exists()
     assert (run_dir / "control_audit_summary.json").exists()
     assert (run_dir / "u2_root_cause_summary.json").exists()

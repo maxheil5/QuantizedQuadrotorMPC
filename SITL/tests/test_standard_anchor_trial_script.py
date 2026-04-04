@@ -19,6 +19,10 @@ def test_standard_anchor_trial_script_uses_standard_anchor_config_and_backfill()
     assert "Stored files:" in script_text
     assert "Required files: complete" in script_text
     assert "Missing required files:" in script_text
+    assert "Root milestone summary:" in script_text
+    assert "Root milestone summary row for this run: present" in script_text
+    assert "WARNING: root milestone_summary.csv was not updated for this run." in script_text
     assert "Host cleanup before rerun after invalid-runtime results:" in script_text
     assert "bash ./scripts/cleanup_sitl_processes.sh" in script_text
     assert "quantized_quadrotor_sitl.experiments.sitl_postrun_analysis" in script_text
+    assert "milestone_summary_contains_run" in script_text
