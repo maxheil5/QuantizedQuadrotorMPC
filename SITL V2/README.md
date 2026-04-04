@@ -32,6 +32,8 @@ learned EDMD-MPC and a SciTech-style dithered quantization workflow.
   - [scripts/freeze_environment.sh](/Users/maxheil/Documents/Github/QuantizedQuadrotorMPC/SITL%20V2/scripts/freeze_environment.sh)
 - Results tree init:
   - [scripts/init_results_tree.sh](/Users/maxheil/Documents/Github/QuantizedQuadrotorMPC/SITL%20V2/scripts/init_results_tree.sh)
+- Firefly runtime parameter audit:
+  - [scripts/check_firefly_runtime_params.sh](/Users/maxheil/Documents/Github/QuantizedQuadrotorMPC/SITL%20V2/scripts/check_firefly_runtime_params.sh)
 
 ## Upstream repos
 
@@ -70,6 +72,20 @@ learned EDMD-MPC and a SciTech-style dithered quantization workflow.
   - [src/koopman_mpc_ros](/Users/maxheil/Documents/Github/QuantizedQuadrotorMPC/SITL%20V2/src/koopman_mpc_ros)
 - Results root:
   - [results](/Users/maxheil/Documents/Github/QuantizedQuadrotorMPC/SITL%20V2/results)
+
+## Runtime Parameter Audit
+
+After launching Firefly with a controller on Ubuntu, capture the active runtime
+mass and inertia with:
+
+```bash
+source /opt/ros/noetic/setup.bash
+cd ~/thesis_v2_ws
+source devel/setup.bash
+bash ~/thesis_v2_ws/QuantizedQuadrotorMPC/"SITL V2"/scripts/check_firefly_runtime_params.sh \
+  /firefly/lee_position_controller_node \
+  ~/thesis_v2_ws/QuantizedQuadrotorMPC/"SITL V2"/results/summary/firefly_runtime_params.txt
+```
 
 ## Initial Thesis Result Ladder
 
