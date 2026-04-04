@@ -7,8 +7,8 @@ REPO_ROOT="$(cd "${V2_ROOT}/.." && pwd)"
 WORKSPACE_ROOT="${1:-$(cd "${REPO_ROOT}/.." && pwd)}"
 DURATION_S="${2:-10}"
 TARGET_RELATIVE_Z_M="${3:-1.0}"
-WORD_LENGTHS=(${KOOPMAN_WORD_LENGTHS:-8 12 14 16})
-REALIZATIONS="${KOOPMAN_REALIZATIONS:-5}"
+WORD_LENGTHS=(${KOOPMAN_WORD_LENGTHS:-8 12 16})
+REALIZATIONS="${KOOPMAN_REALIZATIONS:-20}"
 REALIZATION_INDEX="${KOOPMAN_REALIZATION_INDEX:-0}"
 BUILD_MODELS="${KOOPMAN_BUILD_QUANTIZED_MODELS:-false}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -21,6 +21,14 @@ source /opt/ros/noetic/setup.bash
 source "${WORKSPACE_ROOT}/devel/setup.bash"
 
 printf '%s\n' 'word_length,realizations,realization_index,validation_run_dir,figure_dir,log_path' > "${MANIFEST_PATH}"
+
+echo "Quantized hover sweep configuration:"
+echo "  scenario=hover_5s"
+echo "  word_lengths=${WORD_LENGTHS[*]}"
+echo "  realizations=${REALIZATIONS}"
+echo "  realization_index=${REALIZATION_INDEX}"
+echo "  duration_s=${DURATION_S}"
+echo "  target_relative_z_m=${TARGET_RELATIVE_Z_M}"
 
 if [[ "${BUILD_MODELS}" == "true" ]]; then
   KOOPMAN_WORD_LENGTHS="${WORD_LENGTHS[*]}" \
