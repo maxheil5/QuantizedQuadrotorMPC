@@ -61,3 +61,12 @@ def lift_state(state: np.ndarray, n_basis: int) -> np.ndarray:
 
     flat = np.asarray(state, dtype=float).reshape(18)
     return np.concatenate((flat[0:3], flat[3:6], get_basis(flat, n_basis)))
+
+
+def lift_trajectory(states: np.ndarray, n_basis: int) -> np.ndarray:
+    """Lift an 18 x T state trajectory into the MATLAB z-space."""
+
+    state_matrix = np.asarray(states, dtype=float)
+    if state_matrix.ndim != 2 or state_matrix.shape[0] != 18:
+        raise ValueError("states must be an 18 x T matrix.")
+    return np.column_stack([lift_state(state_matrix[:, i], n_basis) for i in range(state_matrix.shape[1])])
