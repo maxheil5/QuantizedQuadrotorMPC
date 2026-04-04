@@ -13,6 +13,10 @@
   <arg name="takeoff_vertical_speed_threshold_mps" default="0.5" />
   <arg name="takeoff_min_thrust_newton" default="20.0" />
   <arg name="command_thrust_max_newton" default="25.0" />
+  <arg name="hover_xy_position_kp" default="0.20" />
+  <arg name="hover_xy_velocity_kd" default="0.35" />
+  <arg name="hover_xy_command_blend" default="0.15" />
+  <arg name="hover_xy_max_roll_pitch_rad" default="0.18" />
 
   <node pkg="koopman_mpc_ros" type="koopman_mpc_node.py" name="koopman_mpc_node" output="screen">
     <param name="model_path" value="$(arg model_path)" />
@@ -26,6 +30,10 @@
     <param name="takeoff_vertical_speed_threshold_mps" value="$(arg takeoff_vertical_speed_threshold_mps)" />
     <param name="takeoff_min_thrust_newton" value="$(arg takeoff_min_thrust_newton)" />
     <param name="command_thrust_max_newton" value="$(arg command_thrust_max_newton)" />
+    <param name="hover_xy_position_kp" value="$(arg hover_xy_position_kp)" />
+    <param name="hover_xy_velocity_kd" value="$(arg hover_xy_velocity_kd)" />
+    <param name="hover_xy_command_blend" value="$(arg hover_xy_command_blend)" />
+    <param name="hover_xy_max_roll_pitch_rad" value="$(arg hover_xy_max_roll_pitch_rad)" />
     <remap from="odometry" to="$(arg odometry_topic)" />
     <remap from="command/pose" to="$(arg pose_topic)" />
     <remap from="command/trajectory" to="$(arg trajectory_topic)" />

@@ -92,6 +92,12 @@ class KoopmanMpcRosNode:
         self.command_thrust_max_newton = float(
             rospy.get_param("~command_thrust_max_newton", 25.0)
         )
+        self.hover_xy_position_kp = float(rospy.get_param("~hover_xy_position_kp", 0.20))
+        self.hover_xy_velocity_kd = float(rospy.get_param("~hover_xy_velocity_kd", 0.35))
+        self.hover_xy_command_blend = float(rospy.get_param("~hover_xy_command_blend", 0.15))
+        self.hover_xy_max_roll_pitch_rad = float(
+            rospy.get_param("~hover_xy_max_roll_pitch_rad", 0.18)
+        )
         self.reference: PoseReference | None = None
         self.current_state: np.ndarray | None = None
 
@@ -183,8 +189,24 @@ class KoopmanMpcRosNode:
             max_roll_pitch_rad=self.controller.config.max_roll_pitch_rad,
         )
         position, velocity, _rotation, _angular_velocity = unpack_state(self.current_state)
+        xy_error = self.reference.position_xyz[:2] - position[:2]
+        xy_velocity_error = -velocity[:2]
         z_error = float(self.reference.position_xyz[2] - position[2])
         z_velocity = float(velocity[2])
+        pitch_correction = float(
+            np.clip(
+                self.hover_xy_position_kp * xy_error[0] + self.hover_xy_velocity_kd * xy_velocity_error[0],
+                -self.hover_xy_max_roll_pitch_rad,
+                self.hover_xy_max_roll_pitch_rad,
+            )
+        )
+        roll_correction = float(
+            np.clip(
+                -(self.hover_xy_position_kp * xy_error[1] + self.hover_xy_velocity_kd * xy_velocity_error[1]),
+                -self.hover_xy_max_roll_pitch_rad,
+                self.hover_xy_max_roll_pitch_rad,
+            )
+        )
         thrust_assist = float(
             np.clip(
                 self.altitude_assist_kp * max(z_error, 0.0),
@@ -199,11 +221,27 @@ class KoopmanMpcRosNode:
         ):
             thrust_newton = max(thrust_newton, self.takeoff_min_thrust_newton)
         thrust_newton = float(np.clip(thrust_newton, 0.0, self.command_thrust_max_newton))
+        roll_rad = float(
+            np.clip(
+                self.hover_xy_command_blend * command.roll_rad
+                + (1.0 - self.hover_xy_command_blend) * roll_correction,
+                -self.hover_xy_max_roll_pitch_rad,
+                self.hover_xy_max_roll_pitch_rad,
+            )
+        )
+        pitch_rad = float(
+            np.clip(
+                self.hover_xy_command_blend * command.pitch_rad
+                + (1.0 - self.hover_xy_command_blend) * pitch_correction,
+                -self.hover_xy_max_roll_pitch_rad,
+                self.hover_xy_max_roll_pitch_rad,
+            )
+        )
 
         msg = self.RollPitchYawrateThrust()
         msg.header.stamp = self.rospy.Time.now()
-        msg.roll = command.roll_rad
-        msg.pitch = command.pitch_rad
+        msg.roll = roll_rad
+        msg.pitch = pitch_rad
         msg.yaw_rate = command.yaw_rate_rad_s
         msg.thrust.x = 0.0
         msg.thrust.y = 0.0
@@ -218,6 +256,14 @@ class KoopmanMpcRosNode:
             float(step.control[3]),
             float(thrust_assist),
             float(thrust_newton),
+            float(roll_correction),
+            float(pitch_correction),
+            float(roll_rad),
+            float(pitch_rad),
+            float(xy_error[0]),
+            float(xy_error[1]),
+            float(velocity[0]),
+            float(velocity[1]),
             float(z_error),
             float(z_velocity),
             float(step.solve_time_ms),
