@@ -1,0 +1,4 @@
+regime_label,bit_range,bit_values,near_saturation_start_bit,selection_rule
+coarse,4-11,4 5 6 7 8 9 10 11,12,median e_pred or median e_MPC is at least 2x the near-saturation baseline
+transition,none,[],12,between coarse and near-saturation
+near-saturation,12-16,12 13 14 15 16,12,smallest bit where all higher-bit medians stay within 10% of the 16-bit medians

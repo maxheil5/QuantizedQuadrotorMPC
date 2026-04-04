@@ -8,8 +8,22 @@ tend = dt_sim;
 [tout,Xout,Uout,Xdout] = deal([]);
 
 %% --- simulation ----
-h_waitbar = waitbar(0,'Calculating...');
-tic
+show_waitbar = usejava('desktop') && usejava('awt');
+if isfield(params,'show_waitbar')
+    show_waitbar = logical(params.show_waitbar);
+end
+
+verbose = true;
+if isfield(params,'verbose')
+    verbose = logical(params.verbose);
+end
+
+h_waitbar = [];
+if show_waitbar
+    h_waitbar = waitbar(0,'Calculating...');
+end
+
+run_timer = tic;
 Z = Z0;
 for ii = 1:params.MAX_ITER
     % --- time vector ---
@@ -22,11 +36,10 @@ for ii = 1:params.MAX_ITER
     if(params.use_casadi)
         [zval] = casadi_MPC(EDMD,Z,Z_ref,N,params);
     else
-        tic
         [f, G, A, b] = get_QP(EDMD,Z,z_ref,N,params);
         % solve QP using quadprog     
-        [zval] = quadprog(G,f,A,b,[],[],[],[]);
-        toc
+        qp_options = optimoptions('quadprog', 'Display', 'off');
+        [zval] = quadprog(G,f,A,b,[],[],[],[],[],qp_options);
     end
 
     Ut = zval(1:4);
@@ -57,11 +70,19 @@ for ii = 1:params.MAX_ITER
     Uout = [Uout;repmat(Ut',[lent,1])];
     Xdout = [Xdout;repmat(X_ref(:,ii)',[lent,1])];
 
-    waitbar(ii/params.MAX_ITER,h_waitbar,'Calculating...');
+    if show_waitbar && isgraphics(h_waitbar)
+        waitbar(ii/params.MAX_ITER,h_waitbar,'Calculating...');
+    end
 end
-close(h_waitbar)
-fprintf('Calculation Complete!\n')
-toc
+
+if show_waitbar && isgraphics(h_waitbar)
+    close(h_waitbar)
+end
+
+if verbose
+    fprintf('Calculation Complete!\n')
+    toc(run_timer)
+end
 
 mpc.t = tout;
 mpc.X = Xout;

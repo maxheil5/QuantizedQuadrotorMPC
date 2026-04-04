@@ -1,0 +1,13 @@
+reference_name,reference_label,bits,num_trials,median_e_pred,iqr_e_pred,median_e_MPC,iqr_e_MPC,mean_e_MPC,std_e_MPC,regime_label,near_saturation_start_bit
+hover_setpoint,Hover / Setpoint,Inf,1,0.0198799308167504,0,0.995874518892562,0,0.995874518892562,0,unquantized,12
+hover_setpoint,Hover / Setpoint,8,1,0.0732857795741625,0,0.982208882736729,0,0.982208882736729,0,coarse,12
+hover_setpoint,Hover / Setpoint,12,1,0.018669560621932,0,0.995665274964234,0,0.995665274964234,0,near-saturation,12
+hover_setpoint,Hover / Setpoint,16,1,0.0198241431382974,0,0.995860266435063,0,0.995860266435063,0,near-saturation,12
+smooth_planar,Smooth Planar / Circular,Inf,1,0.0198799308167504,0,0.991592017786706,0,0.991592017786706,0,unquantized,12
+smooth_planar,Smooth Planar / Circular,8,1,0.0732857795741625,0,1.16736695949836,0,1.16736695949836,0,coarse,12
+smooth_planar,Smooth Planar / Circular,12,1,0.018669560621932,0,0.991740512423731,0,0.991740512423731,0,near-saturation,12
+smooth_planar,Smooth Planar / Circular,16,1,0.0198241431382974,0,0.991614279702183,0,0.991614279702183,0,near-saturation,12
+aggressive_multi_axis,Aggressive Multi-Axis,Inf,1,0.0198799308167504,0,0.794221367496236,0,0.794221367496236,0,unquantized,12
+aggressive_multi_axis,Aggressive Multi-Axis,8,1,0.0732857795741625,0,0.715930329610941,0,0.715930329610941,0,coarse,12
+aggressive_multi_axis,Aggressive Multi-Axis,12,1,0.018669560621932,0,0.794447662864366,0,0.794447662864366,0,near-saturation,12
+aggressive_multi_axis,Aggressive Multi-Axis,16,1,0.0198241431382974,0,0.794232431328339,0,0.794232431328339,0,near-saturation,12
