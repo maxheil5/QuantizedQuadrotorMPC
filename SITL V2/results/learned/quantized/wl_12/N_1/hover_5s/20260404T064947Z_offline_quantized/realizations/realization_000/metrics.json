@@ -1,0 +1,29 @@
+{
+  "fit_duration_ms": 17.225999996298924,
+  "matrix_metrics": {
+    "A_relative_difference": 1.4823790638288616,
+    "B_relative_difference": 1.1008762166206494
+  },
+  "prediction_rmse": {
+    "dx": 0.19391229764873613,
+    "theta": 0.17208929000775589,
+    "wb": 0.09233195365013933,
+    "x": 0.00031987012751217957
+  },
+  "realization_index": 0,
+  "simulation_duration_ms": 3.461667016381398,
+  "solve_converged_fraction": 0.0,
+  "solve_iterations_max": 10.0,
+  "solve_iterations_mean": 10.0,
+  "solve_time_ms_max": 0.08808300481177866,
+  "solve_time_ms_mean": 0.05202705069677904,
+  "success": true,
+  "tracking_metrics": {
+    "final_position_error_m": 0.0019208527949515495,
+    "max_position_error_m": 0.0019208527949515495,
+    "position_rmse_m": 0.0009158672882573618,
+    "theta_rmse_rad": 9.280301162434645e-06,
+    "velocity_rmse_mps": 0.114659195738726,
+    "wb_rmse_rad_s": 0.0016634855874828763
+  }
+}

@@ -1,0 +1,3 @@
+Offline quantized EDMD-MPC batch run.
+This path quantizes training snapshots and control inputs before EDMD fitting.
+Figures are intentionally deferred; use the saved CSV/JSON artifacts for plotting.

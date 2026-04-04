@@ -1,0 +1,48 @@
+{
+  "generated_at_utc": "2026-04-04T06:49:48Z",
+  "git_commit": "7c0635ae0fc025ce5c239dbaa0bed5a86708d791",
+  "numpy_version": "2.4.3",
+  "parameter_profile": "rotors_firefly_linear_mpc_runtime",
+  "parameter_values": {
+    "J": [
+      [
+        0.034756,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.045893,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0977
+      ]
+    ],
+    "arm_length": 0.2156,
+    "control_layout": "Fb, Mbx, Mby, Mbz",
+    "drag_coefficients": [
+      0.01,
+      0.01,
+      0.0
+    ],
+    "gravity": 9.81,
+    "inertia_diag": [
+      0.034756,
+      0.045893,
+      0.0977
+    ],
+    "mass": 1.52,
+    "moment_constant": 0.016,
+    "motor_constant": 8.54858e-06,
+    "profile_name": "rotors_firefly_linear_mpc_runtime",
+    "rotor_count": 6,
+    "source_summary": "Verified from /firefly/mav_linear_mpc and /firefly/PID_attitude_controller on Ubuntu",
+    "state_layout": "x(3), dx(3), R(9), wb(3)"
+  },
+  "platform": "macOS-26.4-arm64-arm-64bit-Mach-O",
+  "python_version": "3.14.2 (v3.14.2:df793163d58, Dec  5 2025, 12:18:06) [Clang 16.0.0 (clang-1600.0.26.6)]",
+  "solver_backend": "projected_gradient_box_qp"
+}

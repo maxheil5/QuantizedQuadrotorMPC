@@ -1,0 +1,89 @@
+{
+  "A_shape": [
+    51,
+    51
+  ],
+  "B_shape": [
+    51,
+    4
+  ],
+  "C_shape": [
+    24,
+    51
+  ],
+  "effective_sim_duration": 0.02,
+  "matrix_metrics_mean": {
+    "A_relative_difference": 1.4823790638288616,
+    "B_relative_difference": 1.1008762166206494
+  },
+  "matrix_metrics_std": {
+    "A_relative_difference": 0.0,
+    "B_relative_difference": 0.0
+  },
+  "n_basis": 3,
+  "n_training_snapshots": 1000,
+  "parameter_profile": "rotors_firefly_linear_mpc_runtime",
+  "pred_horizon": 5,
+  "prediction_rmse_mean": {
+    "dx": 0.19391229764873613,
+    "theta": 0.17208929000775589,
+    "wb": 0.09233195365013933,
+    "x": 0.00031987012751217957
+  },
+  "prediction_rmse_std": {
+    "dx": 0.0,
+    "theta": 0.0,
+    "wb": 0.0,
+    "x": 0.0
+  },
+  "realizations": 1,
+  "run_id": "20260404T064853Z_offline_quantized",
+  "solve_metrics_mean": {
+    "fit_duration_ms": 28.36175000993535,
+    "simulation_duration_ms": 3.5862919758073986,
+    "solve_converged_fraction": 0.0,
+    "solve_iterations_max": 10.0,
+    "solve_iterations_mean": 10.0,
+    "solve_time_ms_max": 0.07849998655728996,
+    "solve_time_ms_mean": 0.05252295086393133
+  },
+  "solve_metrics_std": {
+    "fit_duration_ms": 0.0,
+    "simulation_duration_ms": 0.0,
+    "solve_converged_fraction": 0.0,
+    "solve_iterations_max": 0.0,
+    "solve_iterations_mean": 0.0,
+    "solve_time_ms_max": 0.0,
+    "solve_time_ms_mean": 0.0
+  },
+  "solver_backend": "projected_gradient_box_qp",
+  "success": true,
+  "successful_realizations": 1,
+  "tracking_metrics_mean": {
+    "final_position_error_m": 0.0019208527949515495,
+    "max_position_error_m": 0.0019208527949515495,
+    "position_rmse_m": 0.0009158672882573618,
+    "theta_rmse_rad": 9.280301162434645e-06,
+    "velocity_rmse_mps": 0.114659195738726,
+    "wb_rmse_rad_s": 0.0016634855874828763
+  },
+  "tracking_metrics_std": {
+    "final_position_error_m": 0.0,
+    "max_position_error_m": 0.0,
+    "position_rmse_m": 0.0,
+    "theta_rmse_rad": 0.0,
+    "velocity_rmse_mps": 0.0,
+    "wb_rmse_rad_s": 0.0
+  },
+  "training_n_control": 10,
+  "training_seed_count": 5,
+  "training_source": "single_initial_state_random",
+  "unquantized_fit_duration_ms": 23.71279100771062,
+  "unquantized_prediction_rmse": {
+    "dx": 0.1970075674435074,
+    "theta": 0.1729626445910991,
+    "wb": 0.09767345613861841,
+    "x": 0.00022103706682653857
+  },
+  "word_length": 12
+}
