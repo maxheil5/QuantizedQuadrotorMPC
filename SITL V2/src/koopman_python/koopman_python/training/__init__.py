@@ -2,6 +2,7 @@
 
 from koopman_python.training.random_trajectories import (
     RandomTrajectoryBatch,
+    get_reference_seeded_random_trajectories,
     get_random_trajectories,
     rk4_step,
     sample_random_controls,
@@ -10,6 +11,7 @@ from koopman_python.training.random_trajectories import (
 
 __all__ = [
     "RandomTrajectoryBatch",
+    "get_reference_seeded_random_trajectories",
     "get_random_trajectories",
     "rk4_step",
     "sample_random_controls",

@@ -35,7 +35,7 @@ from koopman_python.experiments.reference_scenarios import (
     get_scenario_definition,
 )
 from koopman_python.mpc import MpcSimulationConfig, simulate_closed_loop
-from koopman_python.training import get_random_trajectories
+from koopman_python.training import get_random_trajectories, get_reference_seeded_random_trajectories
 
 
 RUN_FAMILY = "learned"
@@ -49,6 +49,8 @@ class OfflineLearnedMpcConfig:
     training_n_control: int = 100
     training_dt: float = 1e-3
     training_t_span: float = 0.1
+    training_source: str = "single_initial_state_random"
+    training_seed_count: int = 10
     n_basis: int = 3
     seed: int = 2141444
     parameter_profile: str = DEFAULT_PROFILE
@@ -200,14 +202,27 @@ def run_offline_learned_mpc_experiment(
         reference_states = deterministic_reference[:, 1:]
 
     fit_start = time.perf_counter()
-    train_batch = get_random_trajectories(
-        initial_state=initial_state,
-        n_control=config.training_n_control,
-        t_traj=training_time_grid,
-        mode="train",
-        params=params,
-        rng=rng,
-    )
+    if config.training_source == "single_initial_state_random":
+        train_batch = get_random_trajectories(
+            initial_state=initial_state,
+            n_control=config.training_n_control,
+            t_traj=training_time_grid,
+            mode="train",
+            params=params,
+            rng=rng,
+        )
+    elif config.training_source == "reference_seeded_random":
+        train_batch = get_reference_seeded_random_trajectories(
+            reference_states=np.column_stack((initial_state.reshape(18, 1), reference_states)),
+            n_control_total=config.training_n_control,
+            t_traj=training_time_grid,
+            num_seed_states=config.training_seed_count,
+            mode="train",
+            params=params,
+            rng=rng,
+        )
+    else:
+        raise ValueError(f"Unsupported training_source: {config.training_source}")
     model = fit_edmd(
         X1=train_batch.X1,
         X2=train_batch.X2,
@@ -260,6 +275,8 @@ def run_offline_learned_mpc_experiment(
         "tracking_metrics": tracking_metrics,
         "n_basis": config.n_basis,
         "training_n_control": config.training_n_control,
+        "training_source": config.training_source,
+        "training_seed_count": config.training_seed_count,
         "n_training_snapshots": int(train_batch.X1.shape[1]),
         "n_sim_steps": int(actual_states.shape[1]),
         "pred_horizon": config.pred_horizon,
@@ -466,6 +483,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--training-n-control", type=int, default=100)
     parser.add_argument("--training-dt", type=float, default=1e-3)
     parser.add_argument("--training-t-span", type=float, default=0.1)
+    parser.add_argument("--training-source", type=str, default="single_initial_state_random", choices=["single_initial_state_random", "reference_seeded_random"])
+    parser.add_argument("--training-seed-count", type=int, default=10)
     parser.add_argument("--n-basis", type=int, default=3)
     parser.add_argument("--seed", type=int, default=2141444)
     parser.add_argument("--parameter-profile", type=str, default=DEFAULT_PROFILE)
@@ -488,6 +507,8 @@ def main() -> None:
         training_n_control=args.training_n_control,
         training_dt=args.training_dt,
         training_t_span=args.training_t_span,
+        training_source=args.training_source,
+        training_seed_count=args.training_seed_count,
         n_basis=args.n_basis,
         seed=args.seed,
         parameter_profile=args.parameter_profile,

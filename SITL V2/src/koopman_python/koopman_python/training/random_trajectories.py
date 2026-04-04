@@ -29,6 +29,46 @@ class RandomTrajectoryBatch:
     mode: TrajectoryMode
 
 
+def _concatenate_batches(batches: list[RandomTrajectoryBatch]) -> RandomTrajectoryBatch:
+    """Concatenate trajectory batches with the same time grid and mode."""
+
+    if not batches:
+        raise ValueError("batches must not be empty.")
+
+    first = batches[0]
+    time_grid = np.asarray(first.t_traj, dtype=float)
+    mode = first.mode
+    for batch in batches[1:]:
+        if batch.mode != mode:
+            raise ValueError("all batches must have the same mode.")
+        if not np.array_equal(time_grid, np.asarray(batch.t_traj, dtype=float)):
+            raise ValueError("all batches must use the same time grid.")
+
+    return RandomTrajectoryBatch(
+        X=np.column_stack([batch.X for batch in batches]),
+        U=np.column_stack([batch.U for batch in batches]),
+        X1=np.column_stack([batch.X1 for batch in batches]),
+        X2=np.column_stack([batch.X2 for batch in batches]),
+        U1=np.column_stack([batch.U1 for batch in batches]),
+        U2=np.column_stack([batch.U2 for batch in batches]),
+        U_rnd=np.column_stack([batch.U_rnd for batch in batches]),
+        t_traj=time_grid,
+        mode=mode,
+    )
+
+
+def _uniform_seed_indices(num_states: int, num_seed_states: int) -> np.ndarray:
+    """Choose evenly spaced seed indices across a reference trajectory."""
+
+    if num_states <= 0:
+        raise ValueError("num_states must be positive.")
+    if num_seed_states <= 0:
+        raise ValueError("num_seed_states must be positive.")
+    if num_seed_states >= num_states:
+        return np.arange(num_states, dtype=int)
+    return np.linspace(0, num_states - 1, num_seed_states, dtype=int)
+
+
 def control_covariance(mode: TrajectoryMode) -> np.ndarray:
     """Return the MATLAB control covariance for the requested mode."""
 
@@ -185,3 +225,49 @@ def get_random_trajectories(
         t_traj=time_grid,
         mode=mode,
     )
+
+
+def get_reference_seeded_random_trajectories(
+    reference_states: np.ndarray,
+    n_control_total: int,
+    t_traj: np.ndarray,
+    *,
+    num_seed_states: int = 10,
+    mode: TrajectoryMode = "train",
+    params: dict[str, object] | None = None,
+    rng: np.random.Generator | None = None,
+) -> RandomTrajectoryBatch:
+    """Generate random-control trajectories from multiple states sampled along a reference path."""
+
+    if n_control_total <= 0:
+        raise ValueError("n_control_total must be positive.")
+
+    state_matrix = np.asarray(reference_states, dtype=float)
+    if state_matrix.ndim != 2 or state_matrix.shape[0] != 18:
+        raise ValueError("reference_states must be an 18 x T matrix.")
+
+    params = get_params() if params is None else params
+    generator = np.random.default_rng() if rng is None else rng
+    seed_indices = _uniform_seed_indices(state_matrix.shape[1], num_seed_states)
+    controls_per_seed = np.full(seed_indices.size, n_control_total // seed_indices.size, dtype=int)
+    controls_per_seed[: n_control_total % seed_indices.size] += 1
+
+    batches = []
+    for seed_index, controls_for_seed in zip(seed_indices, controls_per_seed):
+        if controls_for_seed <= 0:
+            continue
+        batches.append(
+            get_random_trajectories(
+                initial_state=state_matrix[:, seed_index],
+                n_control=int(controls_for_seed),
+                t_traj=t_traj,
+                mode=mode,
+                params=params,
+                rng=generator,
+            )
+        )
+
+    if not batches:
+        raise ValueError("reference-seeded training produced no batches.")
+
+    return _concatenate_batches(batches)
