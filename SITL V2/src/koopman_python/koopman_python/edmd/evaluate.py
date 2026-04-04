@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from koopman_python.dynamics.srb import unpack_state
 from koopman_python.edmd.basis import lift_state
 from koopman_python.edmd.fit import EdmdModel
 
@@ -45,6 +46,12 @@ def vee_map(matrix: np.ndarray) -> np.ndarray:
         [-skew[1, 2], skew[0, 2], -skew[0, 1]],
         dtype=float,
     )
+
+
+def rotation_log_vector(rotation: np.ndarray) -> np.ndarray:
+    """Return vee(log(R)) for a rotation matrix."""
+
+    return _matrix_log_vector(rotation)
 
 
 def _project_to_rotation(matrix: np.ndarray) -> np.ndarray:
@@ -113,6 +120,32 @@ def _decode_observed_trajectory(observed_matrix: np.ndarray) -> ObservedStateCom
         velocities.append(velocity)
         thetas.append(theta)
         angular_velocities.append(wb)
+    return ObservedStateComponents(
+        x=np.column_stack(positions),
+        dx=np.column_stack(velocities),
+        theta=np.column_stack(thetas),
+        wb=np.column_stack(angular_velocities),
+    )
+
+
+def decode_full_state_trajectory(state_matrix: np.ndarray) -> ObservedStateComponents:
+    """Decode an 18 x T full-state trajectory into position/velocity/attitude/rate blocks."""
+
+    matrix = np.asarray(state_matrix, dtype=float)
+    if matrix.ndim != 2 or matrix.shape[0] != 18:
+        raise ValueError("state_matrix must be an 18 x T matrix.")
+
+    positions = []
+    velocities = []
+    thetas = []
+    angular_velocities = []
+    for i in range(matrix.shape[1]):
+        position, velocity, rotation, angular_velocity = unpack_state(matrix[:, i])
+        positions.append(position)
+        velocities.append(velocity)
+        thetas.append(rotation_log_vector(rotation))
+        angular_velocities.append(angular_velocity)
+
     return ObservedStateComponents(
         x=np.column_stack(positions),
         dx=np.column_stack(velocities),
