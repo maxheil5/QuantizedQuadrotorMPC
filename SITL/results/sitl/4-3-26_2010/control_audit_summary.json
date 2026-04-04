@@ -1,0 +1,204 @@
+{
+  "active_axis_thresholds_nm": {
+    "u1": 0.05,
+    "u2": 0.05,
+    "u3": 0.03
+  },
+  "active_overlap_fraction_by_axis": {
+    "u1": 0.8177339901477833,
+    "u2": 0.8883928571428571,
+    "u3": 0.7276785714285714
+  },
+  "active_sample_count_by_axis": {
+    "u1": 203,
+    "u2": 224,
+    "u3": 224
+  },
+  "active_sign_match_fraction_by_axis": {
+    "u1": 0.6867469879518072,
+    "u2": 0.6582914572864321,
+    "u3": 0.6012269938650306
+  },
+  "anchor_intervention_fraction_by_axis": {
+    "u1": 0.1995841995841996,
+    "u2": 0.0893970893970894,
+    "u3": 0.17671517671517672
+  },
+  "anchor_mapping_status": "learned-controller/runtime issue",
+  "anchor_sign_flip_count_by_axis": {
+    "u1": 19,
+    "u2": 9,
+    "u3": 49
+  },
+  "artifact_path": "/home/soarbuckiadm/Desktop/QuantizedQuadrotorMPC-main/SITL/results/offline/sitl_baseline_v1/20260402T013459Z_sitl_id_v7_hovercentered_affine_rotated/edmd_unquantized.npz",
+  "cost_state_mode": "decoded24_raw",
+  "divergence_time_s": 6.96045249,
+  "dominant_mismatch_axis": "u3",
+  "first_anchor_intervention_time_s_by_axis": {
+    "u1": 2.98018915,
+    "u2": 3.080006269,
+    "u3": 1.921123087
+  },
+  "first_bound_hit_time_s_by_axis": {
+    "u0": 1.699986741,
+    "u1": 6.369709369,
+    "u2": 6.29620022,
+    "u3": 6.621705635
+  },
+  "first_sign_mismatch_time_s_by_axis": {
+    "u1": 6.96045249,
+    "u2": 6.259777,
+    "u3": 6.621705635
+  },
+  "log_path": "/home/soarbuckiadm/Desktop/QuantizedQuadrotorMPC-main/SITL/results/sitl/4-3-26_2010/runtime_log.csv",
+  "mapping_status": "mapping/sign bug",
+  "mean_magnitude_ratio_by_axis": {
+    "u1": 0.33915182982702863,
+    "u2": 0.4870829241369918,
+    "u3": 0.6223048758716148
+  },
+  "metadata_path": "/home/soarbuckiadm/Desktop/QuantizedQuadrotorMPC-main/SITL/results/sitl/4-3-26_2010/run_metadata.json",
+  "overlap_sample_count_by_axis": {
+    "u1": 166,
+    "u2": 199,
+    "u3": 163
+  },
+  "pre_divergence_active_overlap_fraction_by_axis": {
+    "u1": 0.3508771929824561,
+    "u2": 0.6710526315789473,
+    "u3": 0.2077922077922078
+  },
+  "pre_divergence_active_sample_count_by_axis": {
+    "u1": 57,
+    "u2": 76,
+    "u3": 77
+  },
+  "pre_divergence_mean_magnitude_ratio_by_axis": {
+    "u1": 0.30633983790655817,
+    "u2": 0.39568248028693015,
+    "u3": 0.8707263714618059
+  },
+  "pre_divergence_overlap_sample_count_by_axis": {
+    "u1": 20,
+    "u2": 51,
+    "u3": 16
+  },
+  "pre_divergence_sign_match_fraction_by_axis": {
+    "u1": 0.95,
+    "u2": 0.8627450980392157,
+    "u3": 0.375
+  },
+  "raw_active_sign_match_fraction_by_axis": {
+    "u1": 0.4024390243902439,
+    "u2": 0.6421052631578947,
+    "u3": 0.5534591194968553
+  },
+  "raw_dominant_mismatch_axis": "u3",
+  "raw_first_sign_mismatch_time_s_by_axis": {
+    "u1": 6.760073095,
+    "u2": 6.259777,
+    "u3": 6.621705635
+  },
+  "raw_mean_magnitude_ratio_by_axis": {
+    "u1": 0.28994199133737286,
+    "u2": 0.4539480449775831,
+    "u3": 0.5517403996553517
+  },
+  "raw_pre_divergence_mean_magnitude_ratio_by_axis": {
+    "u1": 0.17959775742197331,
+    "u2": 0.3005317812394321,
+    "u3": 0.6690875738532436
+  },
+  "raw_pre_divergence_sign_match_fraction_by_axis": {
+    "u1": 0.5263157894736842,
+    "u2": 0.8333333333333334,
+    "u3": 0.0
+  },
+  "run_name": "4-3-26_2010",
+  "u2_first_raw_mismatch_snapshot": {
+    "baseline_u2": 0.13676110460444932,
+    "experiment_time_s": 6.259777,
+    "lateral_position_residual_norm": 0.11274508644532034,
+    "lateral_position_residual_xy": [
+      0.03206432797014713,
+      0.10808946937322617
+    ],
+    "lateral_velocity_residual_norm": 0.0952411806248236,
+    "lateral_velocity_residual_xy": [
+      0.03751957044005394,
+      -0.08753950148820877
+    ],
+    "raw_magnitude_ratio": 0.8815629632714902,
+    "raw_sign_match": false,
+    "raw_u2": -0.12056352463538059,
+    "used_magnitude_ratio": 0.8815629632714902,
+    "used_sign_match": false,
+    "used_u2": -0.12056352463538059
+  },
+  "u2_first_raw_mismatch_time_s": 6.259777,
+  "u2_first_used_mismatch_snapshot": {
+    "baseline_u2": 0.13676110460444932,
+    "experiment_time_s": 6.259777,
+    "lateral_position_residual_norm": 0.11274508644532034,
+    "lateral_position_residual_xy": [
+      0.03206432797014713,
+      0.10808946937322617
+    ],
+    "lateral_velocity_residual_norm": 0.0952411806248236,
+    "lateral_velocity_residual_xy": [
+      0.03751957044005394,
+      -0.08753950148820877
+    ],
+    "raw_magnitude_ratio": 0.8815629632714902,
+    "raw_sign_match": false,
+    "raw_u2": -0.12056352463538059,
+    "used_magnitude_ratio": 0.8815629632714902,
+    "used_sign_match": false,
+    "used_u2": -0.12056352463538059
+  },
+  "u2_first_used_mismatch_time_s": 6.259777,
+  "u2_late_window_mean_baseline_control": 0.06024242701859971,
+  "u2_late_window_mean_lateral_position_residual_norm": 2.7944332372306766,
+  "u2_late_window_mean_lateral_position_residual_xy": [
+    1.5552819478565578,
+    2.0616637109634803
+  ],
+  "u2_late_window_mean_lateral_velocity_residual_norm": 2.9854855197740076,
+  "u2_late_window_mean_lateral_velocity_residual_xy": [
+    0.13019901994116528,
+    2.2112837590507626
+  ],
+  "u2_late_window_mean_raw_control": 0.0275199376854479,
+  "u2_late_window_mean_raw_magnitude_ratio": 0.3943365396195545,
+  "u2_late_window_mean_raw_sign_match": 0.5051546391752577,
+  "u2_late_window_mean_used_control": 0.0275199376854479,
+  "u2_late_window_mean_used_magnitude_ratio": 0.3943365396195545,
+  "u2_late_window_mean_used_sign_match": 0.5051546391752577,
+  "u2_late_window_start_s": 7.980483017999999,
+  "used_active_sign_match_fraction_by_axis": {
+    "u1": 0.6867469879518072,
+    "u2": 0.6582914572864321,
+    "u3": 0.6012269938650306
+  },
+  "used_dominant_mismatch_axis": "u3",
+  "used_first_sign_mismatch_time_s_by_axis": {
+    "u1": 6.96045249,
+    "u2": 6.259777,
+    "u3": 6.621705635
+  },
+  "used_mean_magnitude_ratio_by_axis": {
+    "u1": 0.33915182982702863,
+    "u2": 0.4870829241369918,
+    "u3": 0.6223048758716148
+  },
+  "used_pre_divergence_mean_magnitude_ratio_by_axis": {
+    "u1": 0.30633983790655817,
+    "u2": 0.39568248028693015,
+    "u3": 0.8707263714618059
+  },
+  "used_pre_divergence_sign_match_fraction_by_axis": {
+    "u1": 0.95,
+    "u2": 0.8627450980392157,
+    "u3": 0.375
+  }
+}
