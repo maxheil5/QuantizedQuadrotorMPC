@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 
 def _import_ros() -> tuple[Any, Any, Any]:
     try:
