@@ -46,6 +46,24 @@ wait_for_success() {
   return 1
 }
 
+wait_for_absence() {
+  local command="$1"
+  local description="$2"
+  local attempts="${3:-20}"
+  local delay_seconds="${4:-0.5}"
+  local i
+
+  for ((i = 0; i < attempts; ++i)); do
+    if ! eval "${command}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "${delay_seconds}"
+  done
+
+  echo "Timed out waiting for ${description} to stop." >&2
+  return 1
+}
+
 master_started_by_script=0
 gazebo_started_by_script=0
 koopman_started_by_script=0
@@ -70,6 +88,16 @@ ensure_lowlevel_firefly_yaml_links() {
   ln -sf "${firefly_yaml}" "${cfg_yaml}"
 }
 
+stop_existing_node_if_running() {
+  local node_name="$1"
+
+  if rosnode list 2>/dev/null | grep -q "^${node_name}$"; then
+    echo "Stopping existing ${node_name}."
+    rosnode kill "${node_name}" >/dev/null 2>&1 || true
+    wait_for_absence "rosnode list | grep -q '^${node_name}$'" "${node_name}" || true
+  fi
+}
+
 if rosnode list >/dev/null 2>&1; then
   echo "Using existing ROS master."
 else
@@ -81,25 +109,29 @@ else
 fi
 
 if rosnode list 2>/dev/null | grep -q '^/gazebo$'; then
-  echo "Using existing Gazebo node."
-else
-  echo "Starting Gazebo Firefly stack."
-  nohup roslaunch rotors_gazebo mav.launch mav_name:=firefly > "${RUN_DIR}/gazebo.log" 2>&1 &
-  gazebo_pid="$!"
-  gazebo_started_by_script=1
-  wait_for_success "rosservice list | grep -q '^/gazebo/unpause_physics$'" "Gazebo services"
+  echo "Reloading existing Gazebo Firefly stack."
+  stop_existing_node_if_running "/firefly/koopman_mpc_node"
+  stop_existing_node_if_running "/firefly/mav_lowlevel_attitude_controller"
+  stop_existing_node_if_running "/firefly/PID_attitude_controller"
+  stop_existing_node_if_running "/gazebo_gui"
+  stop_existing_node_if_running "/gazebo"
+  pkill -f gzserver >/dev/null 2>&1 || true
+  pkill -f gzclient >/dev/null 2>&1 || true
+  sleep 2
 fi
+
+echo "Starting Gazebo Firefly stack."
+nohup roslaunch rotors_gazebo mav.launch mav_name:=firefly > "${RUN_DIR}/gazebo.log" 2>&1 &
+gazebo_pid="$!"
+gazebo_started_by_script=1
+wait_for_success "rosservice list | grep -q '^/gazebo/unpause_physics$'" "Gazebo services"
 
 echo "Unpausing Gazebo physics."
 rosservice call /gazebo/unpause_physics "{}" > "${RUN_DIR}/unpause.log" 2>&1 || true
 wait_for_success "rostopic list | grep -q '^/clock$'" "clock topic"
 wait_for_success "rostopic list | grep -q '^/firefly/ground_truth/odometry$'" "ground-truth odometry topic"
 
-if rosnode list 2>/dev/null | grep -q '^/firefly/koopman_mpc_node$'; then
-  echo "Stopping existing /firefly/koopman_mpc_node."
-  rosnode kill /firefly/koopman_mpc_node >/dev/null 2>&1 || true
-  sleep 1
-fi
+stop_existing_node_if_running "/firefly/koopman_mpc_node"
 
 echo "Starting learned hover node."
 nohup env ROS_NAMESPACE=firefly rosrun koopman_mpc_ros koopman_mpc_node.py __name:=koopman_mpc_node "_model_path:=${MODEL_PATH}" _parameter_profile:=rotors_firefly_linear_mpc_runtime _pred_horizon:=10 _qp_max_iter:=100 odometry:=ground_truth/odometry > "${RUN_DIR}/koopman_mpc_node.log" 2>&1 &
@@ -109,15 +141,14 @@ wait_for_success "rosnode list | grep -q '^/firefly/koopman_mpc_node$'" "koopman
 
 ensure_lowlevel_firefly_yaml_links
 
-if rosnode list 2>/dev/null | grep -Eq '^/firefly/(mav_lowlevel_attitude_controller|PID_attitude_controller)$'; then
-  echo "Using existing low-level attitude controller."
-else
-  echo "Starting low-level attitude controller."
-  nohup roslaunch mav_lowlevel_attitude_controller mav_lowlevel_controller.launch > "${RUN_DIR}/mav_lowlevel_attitude_controller.log" 2>&1 &
-  lowlevel_pid="$!"
-  lowlevel_started_by_script=1
-  wait_for_success "rosnode list | grep -q '^/firefly/mav_lowlevel_attitude_controller$'" "mav_lowlevel_attitude_controller"
-fi
+stop_existing_node_if_running "/firefly/mav_lowlevel_attitude_controller"
+stop_existing_node_if_running "/firefly/PID_attitude_controller"
+
+echo "Starting low-level attitude controller."
+nohup roslaunch mav_lowlevel_attitude_controller mav_lowlevel_controller.launch > "${RUN_DIR}/mav_lowlevel_attitude_controller.log" 2>&1 &
+lowlevel_pid="$!"
+lowlevel_started_by_script=1
+wait_for_success "rosnode list | grep -q '^/firefly/mav_lowlevel_attitude_controller$'" "mav_lowlevel_attitude_controller"
 
 {
   echo "run_dir='${RUN_DIR}'"
