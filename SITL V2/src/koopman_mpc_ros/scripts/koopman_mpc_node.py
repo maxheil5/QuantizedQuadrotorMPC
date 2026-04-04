@@ -86,7 +86,7 @@ class KoopmanMpcRosNode:
         self.takeoff_min_thrust_newton = float(
             rospy.get_param(
                 "~takeoff_min_thrust_newton",
-                self.controller.params.mass * 9.81 + 2.0,
+                float(self.controller.params["mass"]) * 9.81 + 2.0,
             )
         )
         self.command_thrust_max_newton = float(
