@@ -90,11 +90,19 @@ ensure_lowlevel_firefly_yaml_links() {
 
 stop_existing_node_if_running() {
   local node_name="$1"
+  local process_pattern="${2:-}"
 
   if rosnode list 2>/dev/null | grep -q "^${node_name}$"; then
     echo "Stopping existing ${node_name}."
     rosnode kill "${node_name}" >/dev/null 2>&1 || true
-    wait_for_absence "rosnode list | grep -q '^${node_name}$'" "${node_name}" || true
+    if ! wait_for_absence "rosnode list | grep -q '^${node_name}$'" "${node_name}"; then
+      if [[ -n "${process_pattern}" ]]; then
+        echo "Force-stopping process pattern ${process_pattern}."
+        pkill -f "${process_pattern}" >/dev/null 2>&1 || true
+        sleep 1
+        wait_for_absence "rosnode list | grep -q '^${node_name}$'" "${node_name}" || true
+      fi
+    fi
   fi
 }
 
@@ -110,11 +118,11 @@ fi
 
 if rosnode list 2>/dev/null | grep -q '^/gazebo$'; then
   echo "Reloading existing Gazebo Firefly stack."
-  stop_existing_node_if_running "/firefly/koopman_mpc_node"
-  stop_existing_node_if_running "/firefly/mav_lowlevel_attitude_controller"
-  stop_existing_node_if_running "/firefly/PID_attitude_controller"
-  stop_existing_node_if_running "/gazebo_gui"
-  stop_existing_node_if_running "/gazebo"
+  stop_existing_node_if_running "/firefly/koopman_mpc_node" "koopman_mpc_node.py"
+  stop_existing_node_if_running "/firefly/mav_lowlevel_attitude_controller" "mav_pid_attitude_controller_node"
+  stop_existing_node_if_running "/firefly/PID_attitude_controller" "PID_attitude_controller_node"
+  stop_existing_node_if_running "/gazebo_gui" "gzclient"
+  stop_existing_node_if_running "/gazebo" "gzserver"
   pkill -f gzserver >/dev/null 2>&1 || true
   pkill -f gzclient >/dev/null 2>&1 || true
   sleep 2
@@ -131,7 +139,7 @@ rosservice call /gazebo/unpause_physics "{}" > "${RUN_DIR}/unpause.log" 2>&1 || 
 wait_for_success "rostopic list | grep -q '^/clock$'" "clock topic"
 wait_for_success "rostopic list | grep -q '^/firefly/ground_truth/odometry$'" "ground-truth odometry topic"
 
-stop_existing_node_if_running "/firefly/koopman_mpc_node"
+stop_existing_node_if_running "/firefly/koopman_mpc_node" "koopman_mpc_node.py"
 
 echo "Starting learned hover node."
 nohup env ROS_NAMESPACE=firefly rosrun koopman_mpc_ros koopman_mpc_node.py __name:=koopman_mpc_node "_model_path:=${MODEL_PATH}" _parameter_profile:=rotors_firefly_linear_mpc_runtime _pred_horizon:=10 _qp_max_iter:=100 odometry:=ground_truth/odometry > "${RUN_DIR}/koopman_mpc_node.log" 2>&1 &
@@ -141,8 +149,8 @@ wait_for_success "rosnode list | grep -q '^/firefly/koopman_mpc_node$'" "koopman
 
 ensure_lowlevel_firefly_yaml_links
 
-stop_existing_node_if_running "/firefly/mav_lowlevel_attitude_controller"
-stop_existing_node_if_running "/firefly/PID_attitude_controller"
+stop_existing_node_if_running "/firefly/mav_lowlevel_attitude_controller" "mav_pid_attitude_controller_node"
+stop_existing_node_if_running "/firefly/PID_attitude_controller" "PID_attitude_controller_node"
 
 echo "Starting low-level attitude controller."
 nohup roslaunch mav_lowlevel_attitude_controller mav_lowlevel_controller.launch > "${RUN_DIR}/mav_lowlevel_attitude_controller.log" 2>&1 &
