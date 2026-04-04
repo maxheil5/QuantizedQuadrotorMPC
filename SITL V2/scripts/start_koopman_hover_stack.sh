@@ -7,6 +7,7 @@ REPO_ROOT="$(cd "${V2_ROOT}/.." && pwd)"
 WORKSPACE_ROOT="${1:-$(cd "${REPO_ROOT}/.." && pwd)}"
 MODEL_PATH="${2:-}"
 LOWLEVEL_PKG_ROOT="${WORKSPACE_ROOT}/src/mav_control_rw/mav_lowlevel_attitude_controller"
+KOOPMAN_QP_MAX_ITER="${KOOPMAN_QP_MAX_ITER:-300}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_DIR="${V2_ROOT}/results/runtime_logs/koopman_hover/${STAMP}"
 PID_FILE="${RUN_DIR}/pids.env"
@@ -176,7 +177,7 @@ wait_for_success "rostopic list | grep -q '^/firefly/ground_truth/odometry$'" "g
 stop_existing_node_if_running "/firefly/koopman_mpc_node" "koopman_mpc_node.py"
 
 echo "Starting learned hover node."
-nohup env ROS_NAMESPACE=firefly rosrun koopman_mpc_ros koopman_mpc_node.py __name:=koopman_mpc_node "_model_path:=${MODEL_PATH}" _parameter_profile:=rotors_firefly_linear_mpc_runtime _pred_horizon:=10 _qp_max_iter:=100 odometry:=ground_truth/odometry > "${RUN_DIR}/koopman_mpc_node.log" 2>&1 &
+nohup env ROS_NAMESPACE=firefly rosrun koopman_mpc_ros koopman_mpc_node.py __name:=koopman_mpc_node "_model_path:=${MODEL_PATH}" _parameter_profile:=rotors_firefly_linear_mpc_runtime _pred_horizon:=10 "_qp_max_iter:=${KOOPMAN_QP_MAX_ITER}" odometry:=ground_truth/odometry > "${RUN_DIR}/koopman_mpc_node.log" 2>&1 &
 koopman_pid="$!"
 koopman_started_by_script=1
 if ! wait_for_success "rosnode list | grep -q '^/firefly/koopman_mpc_node$'" "koopman_mpc_node"; then
@@ -204,6 +205,7 @@ fi
   echo "run_dir='${RUN_DIR}'"
   echo "workspace_root='${WORKSPACE_ROOT}'"
   echo "model_path='${MODEL_PATH}'"
+  echo "koopman_qp_max_iter='${KOOPMAN_QP_MAX_ITER}'"
   echo "master_started_by_script='${master_started_by_script}'"
   echo "gazebo_started_by_script='${gazebo_started_by_script}'"
   echo "koopman_started_by_script='${koopman_started_by_script}'"
@@ -224,6 +226,9 @@ Logs:
 
 Hover command:
   rostopic pub -1 /firefly/command/pose geometry_msgs/PoseStamped "{header: {frame_id: 'world'}, pose: {position: {x: 0.0, y: 0.0, z: 1.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}"
+
+Online MPC settings:
+  KOOPMAN_QP_MAX_ITER=${KOOPMAN_QP_MAX_ITER}
 
 Raw output check:
   rostopic echo -n 5 /firefly/command/raw_body_wrench

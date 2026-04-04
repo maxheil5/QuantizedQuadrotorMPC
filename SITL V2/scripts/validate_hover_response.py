@@ -89,6 +89,9 @@ class CommandSample:
     z_velocity_mps: float
     hover_altitude_trim_newton: float
     vertical_damping_newton: float
+    solve_time_ms: float
+    solve_iterations: float
+    solve_converged: float
 
 
 def _command_sample_from_raw_data(t_s: float, raw_data: list[float]) -> CommandSample:
@@ -114,6 +117,9 @@ def _command_sample_from_raw_data(t_s: float, raw_data: list[float]) -> CommandS
         z_velocity_mps=_value(15),
         hover_altitude_trim_newton=hover_altitude_trim_newton,
         vertical_damping_newton=vertical_damping_newton,
+        solve_time_ms=_value(18),
+        solve_iterations=_value(19),
+        solve_converged=_value(20),
     )
 
 
@@ -137,7 +143,7 @@ def _write_command_csv(path: Path, samples: list[CommandSample]) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=list(asdict(samples[0]).keys()) if samples else list(asdict(CommandSample(0, 0, 0, 0, 0, 0, 0, 0)).keys()),
+            fieldnames=list(asdict(samples[0]).keys()) if samples else list(asdict(CommandSample(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)).keys()),
         )
         writer.writeheader()
         for sample in samples:
@@ -238,6 +244,9 @@ def _compute_command_metrics(command_samples: list[CommandSample], settle_window
         "vertical_damping_newton": _summary("vertical_damping_newton"),
         "z_error_m": _summary("z_error_m"),
         "z_velocity_mps": _summary("z_velocity_mps"),
+        "solve_time_ms": _summary("solve_time_ms"),
+        "solve_iterations": _summary("solve_iterations"),
+        "solve_converged_fraction": _mean(_series("solve_converged")),
     }
 
 
