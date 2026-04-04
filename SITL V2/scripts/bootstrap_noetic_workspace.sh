@@ -6,6 +6,7 @@ V2_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${V2_ROOT}/.." && pwd)"
 WORKSPACE_ROOT="${1:-$(cd "${REPO_ROOT}/.." && pwd)}"
 CATKIN_SRC="${WORKSPACE_ROOT}/src"
+BLACKLIST_PACKAGES="rotors_hil_interface"
 
 clone_or_update() {
   local name="$1"
@@ -57,7 +58,7 @@ link_local_package "koopman_mpc_ros"
 source /opt/ros/noetic/setup.bash
 
 cd "${WORKSPACE_ROOT}"
-catkin config --extend /opt/ros/noetic --cmake-args -DCMAKE_BUILD_TYPE=Release
+catkin config --extend /opt/ros/noetic --blacklist ${BLACKLIST_PACKAGES} --cmake-args -DCMAKE_BUILD_TYPE=Release
 catkin build
 
 echo
@@ -65,4 +66,3 @@ echo "Workspace bootstrap complete."
 echo "Workspace root: ${WORKSPACE_ROOT}"
 echo "Repo root: ${REPO_ROOT}"
 echo "Active V2 root: ${V2_ROOT}"
-
