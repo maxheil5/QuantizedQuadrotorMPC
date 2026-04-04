@@ -7,6 +7,12 @@
   <arg name="odometry_topic" default="odometry" />
   <arg name="pose_topic" default="command/pose" />
   <arg name="trajectory_topic" default="command/trajectory" />
+  <arg name="altitude_assist_kp" default="5.0" />
+  <arg name="altitude_assist_max_delta_newton" default="8.0" />
+  <arg name="takeoff_altitude_error_threshold_m" default="0.2" />
+  <arg name="takeoff_vertical_speed_threshold_mps" default="0.5" />
+  <arg name="takeoff_min_thrust_newton" default="16.9" />
+  <arg name="command_thrust_max_newton" default="25.0" />
 
   <node pkg="koopman_mpc_ros" type="koopman_mpc_node.py" name="koopman_mpc_node" output="screen">
     <param name="model_path" value="$(arg model_path)" />
@@ -14,6 +20,12 @@
     <param name="pred_horizon" value="$(arg pred_horizon)" />
     <param name="qp_max_iter" value="$(arg qp_max_iter)" />
     <param name="parameter_profile" value="$(arg parameter_profile)" />
+    <param name="altitude_assist_kp" value="$(arg altitude_assist_kp)" />
+    <param name="altitude_assist_max_delta_newton" value="$(arg altitude_assist_max_delta_newton)" />
+    <param name="takeoff_altitude_error_threshold_m" value="$(arg takeoff_altitude_error_threshold_m)" />
+    <param name="takeoff_vertical_speed_threshold_mps" value="$(arg takeoff_vertical_speed_threshold_mps)" />
+    <param name="takeoff_min_thrust_newton" value="$(arg takeoff_min_thrust_newton)" />
+    <param name="command_thrust_max_newton" value="$(arg command_thrust_max_newton)" />
     <remap from="odometry" to="$(arg odometry_topic)" />
     <remap from="command/pose" to="$(arg pose_topic)" />
     <remap from="command/trajectory" to="$(arg trajectory_topic)" />

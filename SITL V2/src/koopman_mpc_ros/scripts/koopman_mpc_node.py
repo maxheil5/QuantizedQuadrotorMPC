@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from koopman_python.dynamics.srb import pack_state
+from koopman_python.dynamics.srb import pack_state, unpack_state
 from koopman_python.mpc import (
     LearnedMpcController,
     LearnedMpcRuntimeConfig,
@@ -72,6 +72,25 @@ class KoopmanMpcRosNode:
         self.controller = LearnedMpcController(
             model=load_edmd_model(model_path),
             config=runtime_config,
+        )
+        self.altitude_assist_kp = float(rospy.get_param("~altitude_assist_kp", 5.0))
+        self.altitude_assist_max_delta_newton = float(
+            rospy.get_param("~altitude_assist_max_delta_newton", 8.0)
+        )
+        self.takeoff_altitude_error_threshold_m = float(
+            rospy.get_param("~takeoff_altitude_error_threshold_m", 0.2)
+        )
+        self.takeoff_vertical_speed_threshold_mps = float(
+            rospy.get_param("~takeoff_vertical_speed_threshold_mps", 0.5)
+        )
+        self.takeoff_min_thrust_newton = float(
+            rospy.get_param(
+                "~takeoff_min_thrust_newton",
+                self.controller.params.mass * 9.81 + 2.0,
+            )
+        )
+        self.command_thrust_max_newton = float(
+            rospy.get_param("~command_thrust_max_newton", 25.0)
         )
         self.reference: PoseReference | None = None
         self.current_state: np.ndarray | None = None
@@ -163,6 +182,23 @@ class KoopmanMpcRosNode:
             control_time_step=self.controller.config.control_time_step,
             max_roll_pitch_rad=self.controller.config.max_roll_pitch_rad,
         )
+        position, velocity, _rotation, _angular_velocity = unpack_state(self.current_state)
+        z_error = float(self.reference.position_xyz[2] - position[2])
+        z_velocity = float(velocity[2])
+        thrust_assist = float(
+            np.clip(
+                self.altitude_assist_kp * max(z_error, 0.0),
+                0.0,
+                self.altitude_assist_max_delta_newton,
+            )
+        )
+        thrust_newton = command.thrust_newton + thrust_assist
+        if (
+            z_error >= self.takeoff_altitude_error_threshold_m
+            and z_velocity <= self.takeoff_vertical_speed_threshold_mps
+        ):
+            thrust_newton = max(thrust_newton, self.takeoff_min_thrust_newton)
+        thrust_newton = float(np.clip(thrust_newton, 0.0, self.command_thrust_max_newton))
 
         msg = self.RollPitchYawrateThrust()
         msg.header.stamp = self.rospy.Time.now()
@@ -171,7 +207,7 @@ class KoopmanMpcRosNode:
         msg.yaw_rate = command.yaw_rate_rad_s
         msg.thrust.x = 0.0
         msg.thrust.y = 0.0
-        msg.thrust.z = command.thrust_newton
+        msg.thrust.z = thrust_newton
         self.command_pub.publish(msg)
 
         raw = self.Float64MultiArray()
