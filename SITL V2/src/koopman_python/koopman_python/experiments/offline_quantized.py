@@ -379,6 +379,7 @@ def run_offline_quantized_experiment(
             C=quantized_model.C,
             Z1=quantized_model.Z1,
             Z2=quantized_model.Z2,
+            n_basis=quantized_model.n_basis,
         )
         np.savez_compressed(
             realization_dir / "closed_loop.npz",
@@ -583,6 +584,7 @@ def run_offline_quantized_experiment(
         C=unquantized_model.C,
         Z1=unquantized_model.Z1,
         Z2=unquantized_model.Z2,
+        n_basis=unquantized_model.n_basis,
     )
 
     (run_dir / "notes.txt").write_text(

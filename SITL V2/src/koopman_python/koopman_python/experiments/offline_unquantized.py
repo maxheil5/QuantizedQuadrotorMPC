@@ -261,6 +261,7 @@ def run_offline_unquantized_experiment(
         C=model.C,
         Z1=model.Z1,
         Z2=model.Z2,
+        n_basis=model.n_basis,
     )
 
     trajectory_rows = _trajectory_rows(time_grid, evaluation)

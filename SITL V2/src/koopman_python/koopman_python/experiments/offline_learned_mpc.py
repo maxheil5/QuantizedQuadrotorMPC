@@ -332,6 +332,7 @@ def run_offline_learned_mpc_experiment(
         C=model.C,
         Z1=model.Z1,
         Z2=model.Z2,
+        n_basis=model.n_basis,
     )
     np.savez_compressed(
         run_dir / "closed_loop.npz",

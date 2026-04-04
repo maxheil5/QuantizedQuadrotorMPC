@@ -1,11 +1,190 @@
 #!/usr/bin/env python3
-"""ROS1 learned-controller node scaffold for SITL V2.
-
-This node intentionally starts as a thin interface shell. The learned
-controller math will live in the fresh `koopman_python` package.
-"""
+"""ROS1 learned-controller node for the first hover-only SITL V2 bring-up."""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+import math
+from pathlib import Path
+
+import numpy as np
+
+from koopman_python.dynamics.srb import pack_state
+from koopman_python.mpc import (
+    LearnedMpcController,
+    LearnedMpcRuntimeConfig,
+    build_constant_reference_horizon,
+    control_to_roll_pitch_yawrate_thrust,
+    load_edmd_model,
+)
+
+
+def _quaternion_xyzw_to_rotation_matrix(x: float, y: float, z: float, w: float) -> np.ndarray:
+    return np.array(
+        [
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        ],
+        dtype=float,
+    )
+
+
+def _yaw_from_quaternion_xyzw(x: float, y: float, z: float, w: float) -> float:
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    return float(math.atan2(siny_cosp, cosy_cosp))
+
+
+@dataclass
+class PoseReference:
+    position_xyz: np.ndarray
+    yaw_rad: float
+
+
+class KoopmanMpcRosNode:
+    def __init__(self) -> None:
+        import rospy
+        from geometry_msgs.msg import PoseStamped
+        from mav_msgs.msg import RollPitchYawrateThrust
+        from nav_msgs.msg import Odometry
+        from std_msgs.msg import Float64MultiArray
+        from trajectory_msgs.msg import MultiDOFJointTrajectory
+
+        self.rospy = rospy
+        self.RollPitchYawrateThrust = RollPitchYawrateThrust
+        self.Float64MultiArray = Float64MultiArray
+
+        model_path = Path(rospy.get_param("~model_path", "")).expanduser()
+        if not model_path:
+            raise SystemExit("~model_path must point to an offline learned model.npz file.")
+
+        runtime_config = LearnedMpcRuntimeConfig(
+            pred_horizon=int(rospy.get_param("~pred_horizon", 10)),
+            control_lower_bound=float(rospy.get_param("~control_lower_bound", -50.0)),
+            control_upper_bound=float(rospy.get_param("~control_upper_bound", 50.0)),
+            qp_max_iter=int(rospy.get_param("~qp_max_iter", 100)),
+            qp_tol=float(rospy.get_param("~qp_tol", 1e-8)),
+            parameter_profile=str(rospy.get_param("~parameter_profile", "rotors_firefly_linear_mpc_runtime")),
+            control_time_step=float(rospy.get_param("~control_time_step", 0.01)),
+            max_roll_pitch_rad=float(rospy.get_param("~max_roll_pitch_rad", 0.35)),
+        )
+        self.controller = LearnedMpcController(
+            model=load_edmd_model(model_path),
+            config=runtime_config,
+        )
+        self.reference: PoseReference | None = None
+        self.current_state: np.ndarray | None = None
+
+        self.command_pub = rospy.Publisher("command/roll_pitch_yawrate_thrust", RollPitchYawrateThrust, queue_size=1)
+        self.raw_control_pub = rospy.Publisher("command/raw_body_wrench", Float64MultiArray, queue_size=1)
+        self.state_sub = rospy.Subscriber("odometry", Odometry, self._handle_odometry, queue_size=1)
+        self.pose_sub = rospy.Subscriber("command/pose", PoseStamped, self._handle_pose, queue_size=1)
+        self.traj_sub = rospy.Subscriber("command/trajectory", MultiDOFJointTrajectory, self._handle_trajectory, queue_size=1)
+        publish_rate_hz = float(rospy.get_param("~publish_rate_hz", 100.0))
+        self.timer = rospy.Timer(rospy.Duration.from_sec(1.0 / publish_rate_hz), self._timer_tick)
+
+        rospy.loginfo("koopman_mpc_node ready with hover-first learned MPC runtime.")
+        rospy.loginfo("Using model_path=%s", str(model_path))
+
+    def _handle_odometry(self, msg) -> None:
+        position = np.array(
+            [
+                msg.pose.pose.position.x,
+                msg.pose.pose.position.y,
+                msg.pose.pose.position.z,
+            ],
+            dtype=float,
+        )
+        velocity = np.array(
+            [
+                msg.twist.twist.linear.x,
+                msg.twist.twist.linear.y,
+                msg.twist.twist.linear.z,
+            ],
+            dtype=float,
+        )
+        quaternion = msg.pose.pose.orientation
+        rotation = _quaternion_xyzw_to_rotation_matrix(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
+        angular_velocity = np.array(
+            [
+                msg.twist.twist.angular.x,
+                msg.twist.twist.angular.y,
+                msg.twist.twist.angular.z,
+            ],
+            dtype=float,
+        )
+        self.current_state = pack_state(
+            position=position,
+            velocity=velocity,
+            rotation=rotation,
+            angular_velocity=angular_velocity,
+        )
+
+    def _handle_pose(self, msg) -> None:
+        quaternion = msg.pose.orientation
+        yaw = _yaw_from_quaternion_xyzw(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
+        self.reference = PoseReference(
+            position_xyz=np.array(
+                [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z],
+                dtype=float,
+            ),
+            yaw_rad=yaw,
+        )
+
+    def _handle_trajectory(self, msg) -> None:
+        if not msg.points or not msg.points[0].transforms:
+            return
+        transform = msg.points[0].transforms[0]
+        quaternion = transform.rotation
+        yaw = _yaw_from_quaternion_xyzw(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
+        self.reference = PoseReference(
+            position_xyz=np.array(
+                [transform.translation.x, transform.translation.y, transform.translation.z],
+                dtype=float,
+            ),
+            yaw_rad=yaw,
+        )
+
+    def _timer_tick(self, _event) -> None:
+        if self.current_state is None or self.reference is None:
+            return
+
+        reference_horizon = build_constant_reference_horizon(
+            position_xyz=self.reference.position_xyz,
+            yaw_rad=self.reference.yaw_rad,
+            horizon=self.controller.config.pred_horizon,
+        )
+        step = self.controller.solve(self.current_state, reference_horizon)
+        command = control_to_roll_pitch_yawrate_thrust(
+            current_state=self.current_state,
+            control=step.control,
+            parameter_profile=self.controller.config.parameter_profile,
+            control_time_step=self.controller.config.control_time_step,
+            max_roll_pitch_rad=self.controller.config.max_roll_pitch_rad,
+        )
+
+        msg = self.RollPitchYawrateThrust()
+        msg.header.stamp = self.rospy.Time.now()
+        msg.roll = command.roll_rad
+        msg.pitch = command.pitch_rad
+        msg.yaw_rate = command.yaw_rate_rad_s
+        msg.thrust.x = 0.0
+        msg.thrust.y = 0.0
+        msg.thrust.z = command.thrust_newton
+        self.command_pub.publish(msg)
+
+        raw = self.Float64MultiArray()
+        raw.data = [
+            float(step.control[0]),
+            float(step.control[1]),
+            float(step.control[2]),
+            float(step.control[3]),
+            float(step.solve_time_ms),
+            float(step.solve_iterations),
+            1.0 if step.solve_converged else 0.0,
+        ]
+        self.raw_control_pub.publish(raw)
 
 
 def main() -> None:
@@ -15,10 +194,10 @@ def main() -> None:
         raise SystemExit(f"rospy is required for koopman_mpc_ros: {exc}")
 
     rospy.init_node("koopman_mpc_node")
-    rospy.loginfo("koopman_mpc_ros scaffold is installed. Controller logic is not implemented yet.")
+    node = KoopmanMpcRosNode()
     rospy.spin()
+    del node
 
 
 if __name__ == "__main__":
     main()
-
