@@ -38,3 +38,11 @@ Do not port by copying from:
 
 Those modules can be inspected for context, but V2 must not depend on them.
 
+## Parameter alignment rule
+
+See [vehicle_parameter_alignment.md](./vehicle_parameter_alignment.md).
+
+- Preserve the MATLAB SRB structure.
+- Default the active V2 physical constants to the RotorS Firefly model.
+- Keep the MATLAB parameter profile available for offline reference and thesis
+  comparisons.
