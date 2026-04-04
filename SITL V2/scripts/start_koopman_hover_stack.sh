@@ -120,6 +120,17 @@ show_log_tail_and_exit() {
   exit 1
 }
 
+force_kill_process_pattern() {
+  local pattern="$1"
+  local description="$2"
+
+  if pgrep -f "${pattern}" >/dev/null 2>&1; then
+    echo "Force-stopping ${description}."
+    pkill -f "${pattern}" >/dev/null 2>&1 || true
+    sleep 1
+  fi
+}
+
 if [[ -n "${LATEST_MANAGED_RUN}" && "${LATEST_MANAGED_RUN}" != "${RUN_DIR}" && -f "${LATEST_MANAGED_RUN}/pids.env" ]]; then
   echo "Stopping previous managed hover stack: ${LATEST_MANAGED_RUN}"
   bash "${SCRIPT_DIR}/stop_koopman_hover_stack.sh" "${LATEST_MANAGED_RUN}" >/dev/null 2>&1 || true
@@ -139,12 +150,15 @@ fi
 if rosnode list 2>/dev/null | grep -q '^/gazebo$'; then
   echo "Reloading existing Gazebo Firefly stack."
   stop_existing_node_if_running "/firefly/koopman_mpc_node" "koopman_mpc_node.py"
-  stop_existing_node_if_running "/firefly/mav_lowlevel_attitude_controller" "mav_pid_attitude_controller_node"
-  stop_existing_node_if_running "/firefly/PID_attitude_controller" "PID_attitude_controller_node"
+  force_kill_process_pattern "roslaunch mav_lowlevel_attitude_controller mav_lowlevel_controller.launch" "previous low-level roslaunch"
+  force_kill_process_pattern "roslaunch mav_lowlevel_attitude_controller PID_attitude_controller.launch" "previous PID low-level roslaunch"
+  force_kill_process_pattern "mav_pid_attitude_controller_node" "previous low-level controller process"
+  force_kill_process_pattern "PID_attitude_controller_node" "previous PID attitude controller process"
   stop_existing_node_if_running "/gazebo_gui" "gzclient"
   stop_existing_node_if_running "/gazebo" "gzserver"
-  pkill -f gzserver >/dev/null 2>&1 || true
-  pkill -f gzclient >/dev/null 2>&1 || true
+  force_kill_process_pattern "roslaunch rotors_gazebo mav.launch mav_name:=firefly" "previous Gazebo roslaunch"
+  force_kill_process_pattern "gzserver" "previous gzserver"
+  force_kill_process_pattern "gzclient" "previous gzclient"
   sleep 2
 fi
 
@@ -171,8 +185,12 @@ fi
 
 ensure_lowlevel_firefly_yaml_links
 
-stop_existing_node_if_running "/firefly/mav_lowlevel_attitude_controller" "mav_pid_attitude_controller_node"
-stop_existing_node_if_running "/firefly/PID_attitude_controller" "PID_attitude_controller_node"
+force_kill_process_pattern "roslaunch mav_lowlevel_attitude_controller mav_lowlevel_controller.launch" "previous low-level roslaunch"
+force_kill_process_pattern "roslaunch mav_lowlevel_attitude_controller PID_attitude_controller.launch" "previous PID low-level roslaunch"
+force_kill_process_pattern "mav_pid_attitude_controller_node" "previous low-level controller process"
+force_kill_process_pattern "PID_attitude_controller_node" "previous PID attitude controller process"
+wait_for_absence "rosnode list | grep -q '^/firefly/mav_lowlevel_attitude_controller$'" "/firefly/mav_lowlevel_attitude_controller" || true
+wait_for_absence "rosnode list | grep -q '^/firefly/PID_attitude_controller$'" "/firefly/PID_attitude_controller" || true
 
 echo "Starting low-level attitude controller."
 nohup roslaunch mav_lowlevel_attitude_controller mav_lowlevel_controller.launch > "${RUN_DIR}/mav_lowlevel_attitude_controller.log" 2>&1 &

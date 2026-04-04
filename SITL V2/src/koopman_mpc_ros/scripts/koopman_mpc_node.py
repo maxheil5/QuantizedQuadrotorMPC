@@ -73,9 +73,9 @@ class KoopmanMpcRosNode:
             model=load_edmd_model(model_path),
             config=runtime_config,
         )
-        self.altitude_assist_kp = float(rospy.get_param("~altitude_assist_kp", 5.0))
+        self.altitude_assist_kp = float(rospy.get_param("~altitude_assist_kp", 10.0))
         self.altitude_assist_max_delta_newton = float(
-            rospy.get_param("~altitude_assist_max_delta_newton", 8.0)
+            rospy.get_param("~altitude_assist_max_delta_newton", 15.0)
         )
         self.takeoff_altitude_error_threshold_m = float(
             rospy.get_param("~takeoff_altitude_error_threshold_m", 0.2)
@@ -86,7 +86,7 @@ class KoopmanMpcRosNode:
         self.takeoff_min_thrust_newton = float(
             rospy.get_param(
                 "~takeoff_min_thrust_newton",
-                float(self.controller.params["mass"]) * 9.81 + 2.0,
+                max(float(self.controller.params["mass"]) * 9.81 + 2.0, 20.0),
             )
         )
         self.command_thrust_max_newton = float(
@@ -216,6 +216,10 @@ class KoopmanMpcRosNode:
             float(step.control[1]),
             float(step.control[2]),
             float(step.control[3]),
+            float(thrust_assist),
+            float(thrust_newton),
+            float(z_error),
+            float(z_velocity),
             float(step.solve_time_ms),
             float(step.solve_iterations),
             1.0 if step.solve_converged else 0.0,

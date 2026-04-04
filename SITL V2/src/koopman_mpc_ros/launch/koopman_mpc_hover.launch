@@ -7,11 +7,11 @@
   <arg name="odometry_topic" default="odometry" />
   <arg name="pose_topic" default="command/pose" />
   <arg name="trajectory_topic" default="command/trajectory" />
-  <arg name="altitude_assist_kp" default="5.0" />
-  <arg name="altitude_assist_max_delta_newton" default="8.0" />
+  <arg name="altitude_assist_kp" default="10.0" />
+  <arg name="altitude_assist_max_delta_newton" default="15.0" />
   <arg name="takeoff_altitude_error_threshold_m" default="0.2" />
   <arg name="takeoff_vertical_speed_threshold_mps" default="0.5" />
-  <arg name="takeoff_min_thrust_newton" default="16.9" />
+  <arg name="takeoff_min_thrust_newton" default="20.0" />
   <arg name="command_thrust_max_newton" default="25.0" />
 
   <node pkg="koopman_mpc_ros" type="koopman_mpc_node.py" name="koopman_mpc_node" output="screen">
