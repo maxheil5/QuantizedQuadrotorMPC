@@ -14,6 +14,9 @@
   <arg name="takeoff_vertical_speed_threshold_mps" default="0.5" />
   <arg name="takeoff_min_thrust_newton" default="20.0" />
   <arg name="command_thrust_max_newton" default="25.0" />
+  <arg name="hover_altitude_trim_ki" default="0.8" />
+  <arg name="hover_altitude_trim_max_newton" default="2.5" />
+  <arg name="hover_altitude_trim_start_height_fraction" default="0.5" />
   <arg name="hover_vertical_damping_kd" default="3.0" />
   <arg name="hover_vertical_damping_start_error_m" default="0.35" />
   <arg name="hover_xy_position_kp" default="0.20" />
@@ -34,6 +37,9 @@
     <param name="takeoff_vertical_speed_threshold_mps" value="$(arg takeoff_vertical_speed_threshold_mps)" />
     <param name="takeoff_min_thrust_newton" value="$(arg takeoff_min_thrust_newton)" />
     <param name="command_thrust_max_newton" value="$(arg command_thrust_max_newton)" />
+    <param name="hover_altitude_trim_ki" value="$(arg hover_altitude_trim_ki)" />
+    <param name="hover_altitude_trim_max_newton" value="$(arg hover_altitude_trim_max_newton)" />
+    <param name="hover_altitude_trim_start_height_fraction" value="$(arg hover_altitude_trim_start_height_fraction)" />
     <param name="hover_vertical_damping_kd" value="$(arg hover_vertical_damping_kd)" />
     <param name="hover_vertical_damping_start_error_m" value="$(arg hover_vertical_damping_start_error_m)" />
     <param name="hover_xy_position_kp" value="$(arg hover_xy_position_kp)" />

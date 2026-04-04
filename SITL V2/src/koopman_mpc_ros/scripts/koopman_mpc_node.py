@@ -96,6 +96,15 @@ class KoopmanMpcRosNode:
         self.command_thrust_max_newton = float(
             rospy.get_param("~command_thrust_max_newton", 25.0)
         )
+        self.hover_altitude_trim_ki = float(
+            rospy.get_param("~hover_altitude_trim_ki", 0.8)
+        )
+        self.hover_altitude_trim_max_newton = float(
+            rospy.get_param("~hover_altitude_trim_max_newton", 2.5)
+        )
+        self.hover_altitude_trim_start_height_fraction = float(
+            rospy.get_param("~hover_altitude_trim_start_height_fraction", 0.5)
+        )
         self.hover_vertical_damping_kd = float(
             rospy.get_param("~hover_vertical_damping_kd", 3.0)
         )
@@ -108,6 +117,7 @@ class KoopmanMpcRosNode:
         self.hover_xy_max_roll_pitch_rad = float(
             rospy.get_param("~hover_xy_max_roll_pitch_rad", 0.18)
         )
+        self.hover_altitude_trim_newton = 0.0
         self.reference: PoseReference | None = None
         self.current_state: np.ndarray | None = None
 
@@ -159,6 +169,7 @@ class KoopmanMpcRosNode:
     def _handle_pose(self, msg) -> None:
         quaternion = msg.pose.orientation
         yaw = _yaw_from_quaternion_xyzw(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
+        self.hover_altitude_trim_newton = 0.0
         self.reference = PoseReference(
             position_xyz=np.array(
                 [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z],
@@ -173,6 +184,7 @@ class KoopmanMpcRosNode:
         transform = msg.points[0].transforms[0]
         quaternion = transform.rotation
         yaw = _yaw_from_quaternion_xyzw(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
+        self.hover_altitude_trim_newton = 0.0
         self.reference = PoseReference(
             position_xyz=np.array(
                 [transform.translation.x, transform.translation.y, transform.translation.z],
@@ -233,7 +245,21 @@ class KoopmanMpcRosNode:
             )
         )
         vertical_damping = self.hover_vertical_damping_kd * hover_damping_blend * max(z_velocity, 0.0)
-        thrust_newton = command.thrust_newton + thrust_assist - vertical_damping
+        if position[2] >= self.hover_altitude_trim_start_height_fraction * self.reference.position_xyz[2]:
+            self.hover_altitude_trim_newton = float(
+                np.clip(
+                    self.hover_altitude_trim_newton
+                    + self.hover_altitude_trim_ki * z_error * self.controller.config.control_time_step,
+                    0.0,
+                    self.hover_altitude_trim_max_newton,
+                )
+            )
+        thrust_newton = (
+            command.thrust_newton
+            + thrust_assist
+            + self.hover_altitude_trim_newton
+            - vertical_damping
+        )
         if (
             z_error >= self.takeoff_altitude_error_threshold_m
             and z_velocity <= self.takeoff_vertical_speed_threshold_mps
@@ -300,6 +326,7 @@ class KoopmanMpcRosNode:
             float(velocity[1]),
             float(z_error),
             float(z_velocity),
+            float(self.hover_altitude_trim_newton),
             float(vertical_damping),
             float(step.solve_time_ms),
             float(step.solve_iterations),
