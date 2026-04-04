@@ -34,6 +34,7 @@ kill_if_started() {
 }
 
 kill_if_started "${koopman_started_by_script}" "${koopman_pid}" "koopman_mpc_node launch"
+kill_if_started "${lowlevel_started_by_script:-0}" "${lowlevel_pid:-}" "mav_lowlevel_attitude_controller launch"
 kill_if_started "${gazebo_started_by_script}" "${gazebo_pid}" "gazebo launch"
 kill_if_started "${master_started_by_script}" "${roscore_pid}" "roscore"
 
